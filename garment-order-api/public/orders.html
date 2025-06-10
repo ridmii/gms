@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Order List</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { color: #333; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        .badge { 
+            display: inline-block;
+            padding: 3px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .badge-new { background: #d4edda; color: #155724; }
+    </style>
+</head>
+<body>
+    <h1>Order List</h1>
+    <div id="orders-container">
+        <p>Loading orders...</p>
+    </div>
+
+    <script>
+        fetch('/api/orders')
+            .then(response => response.json())
+            .then(orders => {
+                const container = document.getElementById('orders-container');
+                
+                if (orders.length === 0) {
+                    container.innerHTML = '<p>No orders found</p>';
+                    return;
+                }
+
+                let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Mobile</th>
+                            <th>Item</th>
+                            <th>Qty</th>
+                            <th>Date</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                `;
+
+                orders.forEach(order => {
+                    const date = new Date(order.date).toLocaleString();
+                    const isNew = new Date() - new Date(order.date) < 86400000; // 24 hours
+                    
+                    html += `
+                    <tr>
+                        <td>${order._id.substring(18)}</td>
+                        <td>${order.name || '-'}</td>
+                        <td>${order.email || '-'}</td>
+                        <td>${order.mobile || '-'}</td>
+                        <td>${order.item || '-'}</td>
+                        <td>${order.quantity}</td>
+                        <td>${date}</td>
+                        <td>${isNew ? '<span class="badge badge-new">NEW</span>' : ''}</td>
+                    </tr>
+                    `;
+                });
+
+                html += `</tbody></table>`;
+                container.innerHTML = html;
+            })
+            .catch(error => {
+                document.getElementById('orders-container').innerHTML = `
+                    <p style="color: red">Error loading orders: ${error.message}</p>
+                `;
+            });
+    </script>
+</body>
+</html>
