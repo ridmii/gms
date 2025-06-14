@@ -4,19 +4,22 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-  "dev": "vite",
-  "build": "vite build",
-  "lint": "eslint .",
-  "preview": "vite preview",
-  "start": "concurrently \"npm run server\" \"npm run client\"",
-  "server": "cd garment-order-api && npm start",
-  "client": "cd frontend && live-server"
-},
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "start": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "cd garment-order-api && npm start",
+    "client": "cd frontend && live-server"
+  },
   "dependencies": {
     "axios": "^1.9.0",
     "firebase": "^11.9.0",
+    "pdfkit": "^0.17.1",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-confetti": "^6.4.0",
+    "react-dom": "^19.1.0",
+    "react-icons": "^5.5.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",
@@ -29,9 +32,9 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.19",
     "globals": "^16.0.0",
+    "live-server": "^1.2.2",
     "postcss": "^8.5.4",
     "tailwindcss": "^4.1.8",
-    "vite": "^6.3.5",
-    "live-server": "^1.2.2"
+    "vite": "^6.3.5"
   }
 }

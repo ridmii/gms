@@ -18,15 +18,21 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: "Missing required fields" });
         }
 
+        // Validate artworkImage only if artwork is true and file is expected
+        if (artwork === 'true' && !req.file && !artworkText) {
+            console.warn("Artwork selected but no image or description provided");
+            // Allow submission without image or text if optional
+        }
+
         const newOrder = new Order({
             name,
             email,
             mobile,
             material: material || '',
             quantity: Number(quantity) || 1,
-            artwork: artwork === 'true', // FormData sends boolean as string
+            artwork: artwork === 'true',
             artworkText: artworkText || '',
-            artworkImage: req.file ? req.file.path : '', // Store file path
+            artworkImage: req.file ? `/uploads/${req.file.filename}` : '', // Empty string if no file
             priceDetails: priceDetails ? JSON.parse(priceDetails) : { unitPrice: 2000, total: 2000 }
         });
 
@@ -40,7 +46,7 @@ router.post('/', async (req, res) => {
         console.error('Error saving order:', error);
         res.status(500).json({
             success: false,
-            message: error.message
+            message: error.message || 'Failed to save order'
         });
     }
 });

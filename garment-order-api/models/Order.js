@@ -8,7 +8,7 @@ const orderSchema = new mongoose.Schema({
     quantity: Number,
     artwork: Boolean,
     artworkText: String,
-    artworkImage: String, // Store file path or URL
+    artworkImage: String, // Store file path
     priceDetails: {
         unitPrice: Number,
         total: Number
