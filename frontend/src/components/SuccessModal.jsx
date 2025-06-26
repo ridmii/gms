@@ -3,18 +3,19 @@ import Confetti from 'react-confetti';
 import { FaCheck } from 'react-icons/fa';
 import './SuccessModal.css';
 
-const SuccessModal = ({ isOpen, onClose, orderId }) => {
+const SuccessModal = ({ isOpen, onClose, orderId, email }) => {
   const [downloadError, setDownloadError] = useState(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
+      console.log('SuccessModal opened with orderId:', orderId, 'email:', email); // Debug log
       setShowConfetti(true);
-      const timer = setTimeout(() => setShowConfetti(false), 5000); // Confetti for 5s
+      const timer = setTimeout(() => setShowConfetti(false), 5000);
       return () => clearTimeout(timer);
     }
-  }, [isOpen]);
+  }, [isOpen, orderId, email]);
 
   if (!isOpen) return null;
 
@@ -22,24 +23,27 @@ const SuccessModal = ({ isOpen, onClose, orderId }) => {
     setDownloadError(null);
     setIsDownloading(true);
     try {
-      const response = await fetch(`http://localhost:5000/api/orders/${orderId}/invoice`, {
+      const url = `http://localhost:5000/api/orders/${orderId}/invoice/public?email=${encodeURIComponent(email || '')}`;
+      console.log('Fetching invoice from:', url); // Debug log
+      const response = await fetch(url, {
         method: 'GET',
         headers: { 'Accept': 'application/pdf' },
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const errorData = await response.json();
+        throw new Error(`HTTP ${response.status}: ${errorData.error || response.statusText}`);
       }
 
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      const urlBlob = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = url;
+      link.href = urlBlob;
       link.download = `Invoice-${orderId}.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      window.URL.revokeObjectURL(urlBlob);
     } catch (err) {
       console.error('Download error:', err);
       setDownloadError('Failed to download invoice. Please try again or contact support.');
