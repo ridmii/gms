@@ -148,7 +148,7 @@ async function generateInvoice(req, res) {
   const stream = fs.createWriteStream(pdfFile);
   doc.pipe(stream);
 
-  doc.fontSize(20).text('Invoice', { align: 'center' });
+  doc.fontSize(20).text('Payment Invoice', { align: 'center' });
   doc.moveDown(0.5);
   doc.fontSize(12).text('Dimalsha Fashions', { align: 'center' });
   doc.text('159/37,Pamunuwa Garden,Pamunuwila,Gonewela(W.P)', { align: 'center' });

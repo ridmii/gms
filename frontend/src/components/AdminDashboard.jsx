@@ -127,9 +127,6 @@ const AdminDashboard = () => {
         }
         formData.append('priceDetails', JSON.stringify(priceDetails));
         formData.append('artworkImage', editOrder.artworkFile);
-        for (let [key, value] of formData.entries()) {
-          console.log(`FormData: ${key}=${value instanceof File ? value.name : value}`);
-        }
         response = await axios.put(`http://localhost:5000/api/orders/${editOrder._id}`, formData, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -146,7 +143,6 @@ const AdminDashboard = () => {
             ? JSON.parse(editOrder.priceDetails)
             : { unitPrice: 0, total: 0 },
         };
-        console.log('JSON Update:', updateData);
         response = await axios.put(`http://localhost:5000/api/orders/${editOrder._id}/nofile`, updateData, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -227,105 +223,133 @@ const AdminDashboard = () => {
 
   return (
     <div className="admin-dashboard-container">
-      <div className="sidebar">
+      <aside className="sidebar">
         <div className="sidebar-header">Dimalsha Fashions</div>
-        <ul className="sidebar-nav">
-          <li className={activeSection === 'Dashboard' ? 'active' : ''}>
-            <button onClick={() => setActiveSection('Dashboard')}>Dashboard</button>
-          </li>
-          <li className={activeSection === 'Orders' ? 'active' : ''}>
-            <button onClick={() => setActiveSection('Orders')}>Orders</button>
-          </li>
-          <li className={activeSection === 'Delivery' ? 'active' : ''}>
-            <button onClick={() => setActiveSection('Delivery')}>Delivery</button>
-          </li>
-          <li className={activeSection === 'Inventory' ? 'active' : ''}>
-            <button onClick={() => setActiveSection('Inventory')}>Inventory</button>
-          </li>
-          <li className={activeSection === 'Salary' ? 'active' : ''}>
-            <button onClick={() => setActiveSection('Salary')}>Salary</button>
-          </li>
-          <li className={activeSection === 'Finance' ? 'active' : ''}>
-            <button onClick={() => setActiveSection('Finance')}>Finance</button>
-          </li>
-          <li>
-            <button onClick={handleLogout}>Logout</button>
-          </li>
-        </ul>
-      </div>
-      <div className="content-area">
-        {activeSection === 'Orders' ? (
+        <nav className="sidebar-nav">
+          <button
+            className={activeSection === 'Dashboard' ? 'active' : ''}
+            onClick={() => setActiveSection('Dashboard')}
+          >
+            Dashboard
+          </button>
+          <button
+            className={activeSection === 'Orders' ? 'active' : ''}
+            onClick={() => setActiveSection('Orders')}
+          >
+            Orders
+          </button>
+          <button
+            className={activeSection === 'Delivery' ? 'active' : ''}
+            onClick={() => setActiveSection('Delivery')}
+          >
+            Delivery
+          </button>
+          <button
+            className={activeSection === 'Inventory' ? 'active' : ''}
+            onClick={() => setActiveSection('Inventory')}
+          >
+            Inventory
+          </button>
+          <button
+            className={activeSection === 'Salary' ? 'active' : ''}
+            onClick={() => setActiveSection('Salary')}
+          >
+            Salary
+          </button>
+          <button
+            className={activeSection === 'Finance' ? 'active' : ''}
+            onClick={() => setActiveSection('Finance')}
+          >
+            Finance
+          </button>
+          <button onClick={handleLogout}>Logout</button>
+        </nav>
+      </aside>
+      <main className="content-area">
+        <header className="content-header">
+          <h1 className="content-title">{activeSection}</h1>
+        </header>
+        {activeSection === 'Orders' && (
           <div className="dashboard-content">
-            <h2>Orders</h2>
-            <div className="search-filter-group">
-              <input
-                type="text"
-                placeholder="Search by Order ID or Name..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="search-input"
-              />
-              <select
-                value={timeFilter}
-                onChange={(e) => setTimeFilter(e.target.value)}
-                className="filter-select"
-              >
-                <option value="all">All Orders</option>
-                <option value="7days">Last 7 Days</option>
-                <option value="30days">Last 30 Days</option>
-              </select>
-              <button onClick={handleGenerateReport} className="report-button">
-                Generate Report
-              </button>
-            </div>
-            {error && <p className="error-message">{error}</p>}
+            {error && <div className="error-message">{error}</div>}
             {loading ? (
-              <p>Loading...</p>
+              <p className="loading-text">Loading...</p>
             ) : filteredOrders.length === 0 ? (
-              <p>No orders found.</p>
+              <p className="no-data-text">No orders found.</p>
             ) : (
-              <table className="orders-table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Customer</th>
-                    <th>Date</th>
-                    <th>Material</th>
-                    <th>Qty</th>
-                    <th>Total (Rs.)</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredOrders.map((order) => (
-                    <tr key={order._id}>
-                      <td>{order._id.slice(-8)}</td>
-                      <td>{order.name} ({order.email})</td>
-                      <td>{new Date(order.date).toLocaleDateString('en-US')}</td>
-                      <td>{order.material}</td>
-                      <td>{order.quantity}</td>
-                      <td>{(order.priceDetails?.total || 0).toLocaleString('en-US')}</td>
-                      <td>
-                        <button onClick={() => handleEdit(order)} className="edit-button">
-                          Edit
-                        </button>
-                        <button onClick={() => setDeleteConfirm(order._id)} className="delete-button">
-                          Delete
-                        </button>
-                        <button onClick={() => handleDownload(order._id)} className="download-button">
-                          Download Invoice
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <>
+                <div className="controls">
+                  <input
+                    type="text"
+                    placeholder="Search by Order ID or Name..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="search-input"
+                  />
+                  <select
+                    value={timeFilter}
+                    onChange={(e) => setTimeFilter(e.target.value)}
+                    className="filter-select"
+                  >
+                    <option value="all">All Orders</option>
+                    <option value="7days">Last 7 Days</option>
+                    <option value="30days">Last 30 Days</option>
+                  </select>
+                  <button onClick={handleGenerateReport} className="report-button">
+                    Generate Report
+                  </button>
+                </div>
+                <div className="table-container">
+                  <table className="orders-table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Customer</th>
+                        <th>Date</th>
+                        <th>Material</th>
+                        <th>Qty</th>
+                        <th>Total (Rs.)</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredOrders.map((order) => (
+                        <tr key={order._id}>
+                          <td>{order._id.slice(-8)}</td>
+                          <td>{order.name} ({order.email})</td>
+                          <td>{new Date(order.date).toLocaleDateString('en-US')}</td>
+                          <td>{order.material}</td>
+                          <td>{order.quantity}</td>
+                          <td>{(order.priceDetails?.total || 0).toLocaleString('en-US')}</td>
+                          <td>
+                            <button onClick={() => handleEdit(order)} className="action-button edit">
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => setDeleteConfirm(order._id)}
+                              className="action-button delete"
+                            >
+                              Delete
+                            </button>
+                            <button
+                              onClick={() => handleDownload(order._id)}
+                              className="action-button download"
+                            >
+                              Download
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
-        ) : (
+        )}
+        {activeSection !== 'Orders' && (
           <div className="dashboard-content">
-            <h2>{activeSection}</h2>
-            <p>This section is not yet implemented.</p>
+            <p className="no-data-text">This section is not yet implemented.</p>
           </div>
         )}
         {editOrder && (
@@ -333,83 +357,85 @@ const AdminDashboard = () => {
             <div className="modal-content">
               <h2 className="modal-header">Edit Order</h2>
               <form onSubmit={handleEditSubmit} encType="multipart/form-data">
-                <div className="form-group">
-                  <label className="form-label">Name</label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={editOrder.name || ''}
-                    onChange={handleEditChange}
-                    className="form-input"
-                    placeholder="Enter customer name"
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Email</label>
-                  <input
-                    type="email"
-                    name="email"
-                    value={editOrder.email || ''}
-                    onChange={handleEditChange}
-                    className="form-input"
-                    placeholder="Enter email"
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Mobile</label>
-                  <input
-                    type="tel"
-                    name="mobile"
-                    value={editOrder.mobile || ''}
-                    onChange={handleEditChange}
-                    className="form-input"
-                    placeholder="Enter mobile number"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Material</label>
-                  <select
-                    name="material"
-                    value={editOrder.material || ''}
-                    onChange={handleEditChange}
-                    className="form-select"
-                    required
-                  >
-                    <option value="">Select material</option>
-                    <option value="Cotton">Cotton</option>
-                    <option value="Silk">Silk</option>
-                    <option value="Polyester">Polyester</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Quantity</label>
-                  <input
-                    type="number"
-                    name="quantity"
-                    value={editOrder.quantity || ''}
-                    onChange={handleEditChange}
-                    className="form-input"
-                    placeholder="Enter quantity"
-                    min="1"
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label className="form-label">Name</label>
                     <input
-                      type="checkbox"
-                      name="artwork"
-                      checked={editOrder.artwork || false}
+                      type="text"
+                      name="name"
+                      value={editOrder.name || ''}
                       onChange={handleEditChange}
-                      className="mr-2"
+                      className="form-input"
+                      placeholder="Enter customer name"
+                      required
                     />
-                    Require Artwork Design
-                  </label>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Email</label>
+                    <input
+                      type="email"
+                      name="email"
+                      value={editOrder.email || ''}
+                      onChange={handleEditChange}
+                      className="form-input"
+                      placeholder="Enter email"
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Mobile</label>
+                    <input
+                      type="tel"
+                      name="mobile"
+                      value={editOrder.mobile || ''}
+                      onChange={handleEditChange}
+                      className="form-input"
+                      placeholder="Enter mobile number"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Material</label>
+                    <select
+                      name="material"
+                      value={editOrder.material || ''}
+                      onChange={handleEditChange}
+                      className="form-select"
+                      required
+                    >
+                      <option value="">Select material</option>
+                      <option value="Cotton">Cotton</option>
+                      <option value="Silk">Silk</option>
+                      <option value="Polyester">Polyester</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Quantity</label>
+                    <input
+                      type="number"
+                      name="quantity"
+                      value={editOrder.quantity || ''}
+                      onChange={handleEditChange}
+                      className="form-input"
+                      placeholder="Enter quantity"
+                      min="1"
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">
+                      <input
+                        type="checkbox"
+                        name="artwork"
+                        checked={editOrder.artwork || false}
+                        onChange={handleEditChange}
+                        className="mr-2"
+                      />
+                      Require Artwork Design
+                    </label>
+                  </div>
                 </div>
                 {editOrder.artwork && (
-                  <>
+                  <div className="form-section">
                     <div className="form-group">
                       <label className="form-label">Artwork Description</label>
                       <textarea
@@ -417,11 +443,11 @@ const AdminDashboard = () => {
                         value={editOrder.artworkText || ''}
                         onChange={handleEditChange}
                         className="form-textarea"
-                        rows="4"
+                        rows="3"
                         placeholder="Describe artwork requirements"
                       />
                     </div>
-                    <div className="file-upload-wrapper">
+                    <div className="form-group file-upload-wrapper">
                       <label className="form-label">Upload Artwork File</label>
                       <label className="file-upload-label">
                         <input
@@ -437,9 +463,9 @@ const AdminDashboard = () => {
                           <span className="file-upload-hint">JPEG, PNG, or PDF (max 10MB)</span>
                         </div>
                       </label>
-                      {editOrder.artworkFile && <p>File: {editOrder.artworkFile.name}</p>}
+                      {editOrder.artworkFile && <p className="file-name">File: {editOrder.artworkFile.name}</p>}
                     </div>
-                  </>
+                  </div>
                 )}
                 <div className="form-group">
                   <label className="form-label">Price Details (JSON)</label>
@@ -477,7 +503,7 @@ const AdminDashboard = () => {
           </div>
         )}
         {toastMessage && <div className="toast">{toastMessage}</div>}
-      </div>
+      </main>
     </div>
   );
 };
