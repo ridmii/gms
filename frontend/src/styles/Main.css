@@ -201,7 +201,7 @@ body {
 }
 
 .social-section {
-  margin-top: 2rem;; 
+  margin-top: 2rem;
   padding-bottom: 2rem;
   position: absolute;
   bottom: 3.5rem; /* Fixed position at bottom */
@@ -249,6 +249,7 @@ body {
     opacity: 0;
   }
 }
+
 /* Responsive */
 @media screen and (max-width: 768px) {
   .home-container {
@@ -409,10 +410,12 @@ body {
 .login-card {
   max-width: 500px;
   width: 100%;
-  background: #ffffff;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  padding: 2rem;
+  background: #000000;
+  border-radius: 15px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  padding: 2.5rem;
+  animation: fadeInUp 0.5s ease-out forwards;
+  border: 1px solid #ffffff;
 }
 
 .login-header {
@@ -421,9 +424,87 @@ body {
 }
 
 .login-header h2 {
-  font-size: 2rem;
+  font-size: 2.5rem;
   font-weight: 700;
-  color: #000000;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Forms */
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #ffffff !important; /* Force white color for labels */
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+}
+
+.form-input,
+.form-select,
+.form-textarea {
+  width: 50%; /* Reduced width to make text boxes shorter */
+  padding: 0.75rem;
+  border: 2px solid #ffffff;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  transition: border-color 0.3s, box-shadow 0.3s;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff; /* Input text white */
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+  outline: none;
+  border-color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3);
+}
+
+.submit-button,
+.report-button {
+  padding: 0.9rem 2rem;
+  background: #ffffff; /* White background for button */
+  color: #000000; /* Black text for button */
+  font-weight: 700;
+  border: 2px solid #ffffff;
+  border-radius: 25px;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: 0 5px 15px rgba(255, 255, 255, 0.2);
+  width: 100%;
+}
+
+.submit-button:hover,
+.report-button:hover {
+  background: #e0e0e0; /* Lighter white on hover */
+  color: #000000; /* Keep text black */
+  box-shadow: 0 7px 20px rgba(0, 0, 0, 0.4);
+  transform: translateY(-2px);
+}
+
+.error-message {
+  color: #ef4444;
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+  text-align: center;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Admin Dashboard */

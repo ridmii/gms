@@ -29,7 +29,7 @@ export default function OrderForm() {
     orderId: null,
   });
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [submittedEmail, setSubmittedEmail] = useState(""); // New state for email
+  const [submittedEmail, setSubmittedEmail] = useState("");
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -70,11 +70,6 @@ export default function OrderForm() {
       }
       formDataToSend.append("priceDetails", JSON.stringify(priceDetails));
 
-      console.log('Submitting FormData:');
-      for (let [key, value] of formDataToSend.entries()) {
-        console.log(`${key}: ${value}`);
-      }
-
       const response = await axios.post(
         'http://localhost:5000/api/orders',
         formDataToSend,
@@ -90,7 +85,7 @@ export default function OrderForm() {
         message: "Order submitted successfully!",
         orderId: response.data.order._id,
       });
-      setSubmittedEmail(formData.email); // Store email before reset
+      setSubmittedEmail(formData.email);
       setShowSuccessModal(true);
 
       setFormData({
@@ -131,100 +126,96 @@ export default function OrderForm() {
           <div className="error-message">{submitStatus.message}</div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="form-group">
-              <label className="form-label">
-                Customer Name <span className="required">*</span>
-              </label>
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 p-4">
+          <div className="form-group">
+            <label className="form-label">
+              Customer Name <span className="required">*</span>
+            </label>
+            <input
+              name="name"
+              type="text"
+              required
+              value={formData.name}
+              placeholder="Your factory name"
+              className="form-input w-full"
+              onChange={handleChange}
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Mobile Number</label>
+            <input
+              name="mobile"
+              type="tel"
+              value={formData.mobile}
+              placeholder="+94771234567"
+              className="form-input w-full"
+              onChange={handleChange}
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">
+              Email Address <span className="required">*</span>
+            </label>
+            <input
+              name="email"
+              type="email"
+              required
+              value={formData.email}
+              placeholder="123textiles@example.com"
+              className="form-input w-full"
+              onChange={handleChange}
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">
+              Material Type <span className="required">*</span>
+            </label>
+            <select
+              name="material"
+              required
+              value={formData.material}
+              className="form-input w-full"
+              onChange={handleChange}
+            >
+              <option value="">Select Material</option>
+              <option value="Cotton">Cotton</option>
+              <option value="Polyester">Polyester</option>
+              <option value="Linen">Linen</option>
+              <option value="Silk">Silk</option>
+              <option value="Blend">Blend</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">
+              Quantity <span className="required">*</span>
+            </label>
+            <div className="relative">
               <input
-                name="name"
-                type="text"
+                name="quantity"
+                type="number"
+                min="1"
                 required
-                value={formData.name}
-                placeholder="Your factory name"
-                className="form-input"
+                value={formData.quantity}
+                className="form-input w-full pl-12"
                 onChange={handleChange}
               />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">
-                Mobile Number
-              </label>
-              <input
-                name="mobile"
-                type="tel"
-                value={formData.mobile}
-                placeholder="+94771234567"
-                className="form-input"
-                onChange={handleChange}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">
-                Email Address <span className="required">*</span>
-              </label>
-              <input
-                name="email"
-                type="email"
-                required
-                value={formData.email}
-                placeholder="123textiles@example.com"
-                className="form-input"
-                onChange={handleChange}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">
-                Material Type <span className="required">*</span>
-              </label>
-              <select
-                name="material"
-                required
-                value={formData.material}
-                className="form-input"
-                onChange={handleChange}
-              >
-                <option value="">Select Material</option>
-                <option value="Cotton">Cotton</option>
-                <option value="Polyester">Polyester</option>
-                <option value="Linen">Linen</option>
-                <option value="Silk">Silk</option>
-                <option value="Blend">Blend</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">
-                Quantity <span className="required">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  name="quantity"
-                  type="number"
-                  min="1"
-                  required
-                  value={formData.quantity}
-                  className="form-input pl-12"
-                  onChange={handleChange}
-                />
-                <div className="quantity-badge">
-                  {formData.quantity > 50 ? "Bulk Order" : "Standard"}
-                </div>
+              <div className="quantity-badge">
+                {formData.quantity > 50 ? "Bulk Order" : "Standard"}
               </div>
             </div>
           </div>
 
-          <div className="flex items-center mt-6">
+          <div className="form-group flex items-center">
             <input
               id="artwork"
               type="checkbox"
               name="artwork"
-              className="artwork-checkbox"
+              className="artwork-checkbox mr-2"
               checked={formData.artwork}
               onChange={handleChange}
             />
@@ -242,15 +233,13 @@ export default function OrderForm() {
                   rows="3"
                   value={formData.artworkText}
                   placeholder="Describe your design requirements..."
-                  className="form-input"
+                  className="form-input w-full"
                   onChange={handleChange}
                 />
               </div>
 
               <div className="form-group">
-                <label className="form-label">
-                  Upload Design File (Optional)
-                </label>
+                <label className="form-label">Upload Design File (Optional)</label>
                 <div className="file-upload-wrapper">
                   <label className="file-upload-label">
                     <input
@@ -301,7 +290,7 @@ export default function OrderForm() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="submit-button"
+            className="submit-button w-full"
           >
             {isSubmitting ? (
               <span className="flex items-center justify-center">
@@ -338,7 +327,7 @@ export default function OrderForm() {
         isOpen={showSuccessModal}
         onClose={() => setShowSuccessModal(false)}
         orderId={submitStatus.orderId}
-        email={submittedEmail} // Use stored email
+        email={submittedEmail}
       />
     </div>
   );
