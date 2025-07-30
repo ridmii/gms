@@ -13,8 +13,10 @@
     "client": "cd frontend && live-server"
   },
   "dependencies": {
+    "@stripe/stripe-js": "^7.6.1",
     "axios": "^1.10.0",
     "firebase": "^11.9.0",
+    "framer-motion": "^12.23.6",
     "pdfkit": "^0.17.1",
     "react": "^19.1.0",
     "react-confetti": "^6.4.0",

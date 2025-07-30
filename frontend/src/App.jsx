@@ -5,17 +5,19 @@ import OrderForm from './components/OrderForm';
 import PastOrders from './components/PastOrders';
 import AdminLogin from './components/AdminLogin';
 import AdminDashboard from './components/AdminDashboard';
-
-const ProtectedRoute = ({ children }) => {
-  const token = localStorage.getItem('adminToken');
-  return token ? children : <Navigate to="/admin/login" />;
-};
+import OrderDashboard from './components/OrderDashboard';
+import CustomerLogin from './components/CustomerLogin';
+import CustomerRegister from './components/CustomerRegister';
+import ProtectedRoute from './components/ProtectedRoute';
+import DeliveryPage from './components/DeliveryManagement'; 
 
 const App = () => {
   return (
     <Router>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/login" element={<CustomerLogin />} />
+        <Route path="/register" element={<CustomerRegister />} />
         <Route path="/order" element={<OrderForm />} />
         <Route path="/past-orders" element={<PastOrders />} />
         <Route path="/admin/login" element={<AdminLogin />} />
@@ -27,7 +29,23 @@ const App = () => {
             </ProtectedRoute>
           }
         />
-        <Route path="*" element={<Navigate to="/" />} />
+        <Route
+          path="/admin/orders"
+          element={
+            <ProtectedRoute>
+              <OrderDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/deliveries"
+          element={
+            <ProtectedRoute>
+              <DeliveryPage/>
+            </ProtectedRoute>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>
   );

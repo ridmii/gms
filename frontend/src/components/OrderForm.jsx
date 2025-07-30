@@ -1,334 +1,342 @@
-import { useState, useEffect, useRef } from "react";
-import axios from "axios";
-import SuccessModal from "./SuccessModal";
-import "./OrderForm.css";
+import { useState, useRef } from 'react';
+import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
+import Layout from './Layout';
+import SuccessModal from './SuccessModal';
+import axios from 'axios';
+import '../styles/OrderForm.css';
+import '../styles/Header.css';
+import '../styles/Footer.css';
 
-export default function OrderForm() {
+const OrderForm = () => {
   const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    mobile: "",
-    material: "",
-    quantity: 1,
-    artwork: false,
-    artworkText: "",
-    artworkImage: null,
+    name: '',
+    email: '',
+    mobile: '',
+    material: 'Cotton',
+    quantity: 30,
+    artworkFile: null,
+    artworkText: '',
+    artwork: false
   });
 
-  const [priceDetails, setPriceDetails] = useState({
-    unitPrice: 2000,
-    total: 2000,
-    advance: 1000,
-    balance: 1000,
-  });
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitStatus, setSubmitStatus] = useState({
-    success: false,
-    message: "",
-    orderId: null,
-  });
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [submittedEmail, setSubmittedEmail] = useState("");
+  const [orderId, setOrderId] = useState('');
   const fileInputRef = useRef(null);
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    const qty = Number(formData.quantity) || 1;
-    let unitPrice = 2000;
-    if (qty > 50) unitPrice = 1500;
-    const baseTotal = qty * unitPrice;
-    const artworkFee = formData.artwork ? 5000 : 0;
-    const total = baseTotal + artworkFee;
-    const advance = Math.round(total * 0.5);
-    const balance = total - advance;
-
-    setPriceDetails({ unitPrice, total, advance, balance });
-  }, [formData.quantity, formData.artwork]);
+  const unitPrice = formData.quantity > 30 ? 1500 : 2000;
+  const artworkFee = formData.artwork ? 5000 : 0;
+  const subtotal = formData.quantity * unitPrice;
+  const total = subtotal + artworkFee;
 
   const handleChange = (e) => {
-    const { name, value, type, checked, files } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : type === "file" ? files[0] : value
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({ 
+      ...prev, 
+      [name]: type === 'checkbox' ? checked : value 
+    }));
+  };
+
+  const handleFileChange = (e) => {
+    setFormData(prev => ({ 
+      ...prev, 
+      artworkFile: e.target.files[0],
+      artwork: true 
     }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setIsSubmitting(true);
-    setSubmitStatus({ success: false, message: "", orderId: null });
+    if (!formData.name || !formData.email || !formData.mobile || !formData.material || !formData.quantity) {
+      setError('All required fields must be filled.');
+      return;
+    }
+
+    const formDataToSend = new FormData();
+    formDataToSend.append('name', formData.name);
+    formDataToSend.append('email', formData.email);
+    formDataToSend.append('mobile', formData.mobile);
+    formDataToSend.append('material', formData.material);
+    formDataToSend.append('quantity', formData.quantity);
+    formDataToSend.append('artwork', formData.artwork);
+    if (formData.artworkFile) formDataToSend.append('artworkFile', formData.artworkFile);
+    if (formData.artworkText) formDataToSend.append('artworkText', formData.artworkText);
+
+    const unitPrice = formData.quantity > 30 ? 1500 : 2000;
+    const artworkFee = formData.artwork ? 5000 : 0;
+    const subtotal = formData.quantity * unitPrice;
+    const total = subtotal + artworkFee;
+    const advance = Math.round(total * 0.5);
+    const balance = total - advance;
+    formDataToSend.append('priceDetails', JSON.stringify({ unitPrice, subtotal, artworkFee, total, advance, balance }));
 
     try {
-      const formDataToSend = new FormData();
-      Object.entries(formData).forEach(([key, value]) => {
-        if (key !== 'artworkImage' && value !== null && value !== undefined) {
-          formDataToSend.append(key, value);
-        }
+      const response = await axios.post('http://localhost:5000/api/orders', formDataToSend, {
+        headers: { 
+          'Content-Type': 'multipart/form-data',
+          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImFkbWluQGRpbWFsc2hhLmNvbSIsImlhdCI6MTc1Mzg0NjkzNiwiZXhwIjoxNzUzOTMzMzM2fQ.mNm2eWlyUuGrjKldGCkkGuztPxBXnue5By1dI6A4pbc` // Replace with your actual token
+        },
       });
-      if (formData.artworkImage) {
-        formDataToSend.append('artworkImage', formData.artworkImage);
-      }
-      formDataToSend.append("priceDetails", JSON.stringify(priceDetails));
-
-      const response = await axios.post(
-        'http://localhost:5000/api/orders',
-        formDataToSend,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
-
-      if (!response.data.order || !response.data.order._id) {
-        throw new Error("Invalid response from server");
-      }
-
-      setSubmitStatus({
-        success: true,
-        message: "Order submitted successfully!",
-        orderId: response.data.order._id,
-      });
-      setSubmittedEmail(formData.email);
+      const newOrderId = response.data._id;
+      setOrderId(newOrderId);
       setShowSuccessModal(true);
-
-      setFormData({
-        name: "",
-        email: "",
-        mobile: "",
-        material: formData.material,
-        quantity: 1,
-        artwork: false,
-        artworkText: "",
-        artworkImage: null,
-      });
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    } catch (error) {
-      console.error("Submission error:", error);
-      setSubmitStatus({
-        success: false,
-        message: error.response?.data?.error || error.message || "Failed to submit order. Please try again.",
-        orderId: null,
-      });
-      setShowSuccessModal(false);
+      setError(null);
+    } catch (err) {
+      console.error('Submit Error:', err.response?.data || err.message);
+      setError(`Failed to submit order. ${err.response?.data?.message || err.message || 'Please try again.'}`);
     } finally {
-      setIsSubmitting(false);
+      if (!error) {
+        setFormData({
+          name: '',
+          email: '',
+          mobile: '',
+          material: 'Cotton',
+          quantity: 30,
+          artworkFile: null,
+          artworkText: '',
+          artwork: false
+        });
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleDownloadInvoice = async () => {
+    try {
+      const invoiceResponse = await axios.get(`http://localhost:5000/api/orders/${orderId}/invoice/public`, {
+        params: { email: formData.email },
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([invoiceResponse.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Invoice-${orderId}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+    } catch (err) {
+      console.error('Download Error:', err.response?.data || err.message);
+      setError(`Failed to download invoice. ${err.response?.data?.message || err.message || 'Please try again.'}`);
     }
   };
 
   return (
-    <div className="order-form-container">
-      <div className="form-card">
-        <div className="form-header">
-          <h2>Let's make your first order with us!</h2>
-          <p className="text-gray-500">Fill out the form below to place your order</p>
-        </div>
+    <Layout activePage="place-order">
+      <motion.div 
+        className="place-order-container"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5 }}
+      >
+        <motion.div 
+          className="order-header"
+          initial={{ y: -20 }}
+          animate={{ y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <h1>Place Your Order</h1>
+          <p>Complete the form below to submit your garment production request</p>
+        </motion.div>
 
-        {submitStatus.message && !submitStatus.success && (
-          <div className="error-message">{submitStatus.message}</div>
-        )}
-
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 p-4">
-          <div className="form-group">
-            <label className="form-label">
-              Customer Name <span className="required">*</span>
-            </label>
-            <input
-              name="name"
-              type="text"
-              required
-              value={formData.name}
-              placeholder="Your factory name"
-              className="form-input w-full"
-              onChange={handleChange}
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Mobile Number</label>
-            <input
-              name="mobile"
-              type="tel"
-              value={formData.mobile}
-              placeholder="+94771234567"
-              className="form-input w-full"
-              onChange={handleChange}
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">
-              Email Address <span className="required">*</span>
-            </label>
-            <input
-              name="email"
-              type="email"
-              required
-              value={formData.email}
-              placeholder="123textiles@example.com"
-              className="form-input w-full"
-              onChange={handleChange}
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">
-              Material Type <span className="required">*</span>
-            </label>
-            <select
-              name="material"
-              required
-              value={formData.material}
-              className="form-input w-full"
-              onChange={handleChange}
-            >
-              <option value="">Select Material</option>
-              <option value="Cotton">Cotton</option>
-              <option value="Polyester">Polyester</option>
-              <option value="Linen">Linen</option>
-              <option value="Silk">Silk</option>
-              <option value="Blend">Blend</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">
-              Quantity <span className="required">*</span>
-            </label>
-            <div className="relative">
-              <input
-                name="quantity"
-                type="number"
-                min="1"
-                required
-                value={formData.quantity}
-                className="form-input w-full pl-12"
-                onChange={handleChange}
-              />
-              <div className="quantity-badge">
-                {formData.quantity > 50 ? "Bulk Order" : "Standard"}
-              </div>
-            </div>
-          </div>
-
-          <div className="form-group flex items-center">
-            <input
-              id="artwork"
-              type="checkbox"
-              name="artwork"
-              className="artwork-checkbox mr-2"
-              checked={formData.artwork}
-              onChange={handleChange}
-            />
-            <label htmlFor="artwork" className="artwork-label">
-              Include Artwork Design (+Rs. 5000)
-            </label>
-          </div>
-
-          {formData.artwork && (
-            <div className="artwork-details">
+        <div className="order-content">
+          <motion.form 
+            onSubmit={handleSubmit}
+            className="order-form"
+            initial={{ x: -20, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+          >
+            <div className="form-section">
+              <h2>Factory Information</h2>
               <div className="form-group">
-                <label className="form-label">Artwork Description</label>
-                <textarea
-                  name="artworkText"
-                  rows="3"
-                  value={formData.artworkText}
-                  placeholder="Describe your design requirements..."
-                  className="form-input w-full"
+                <label>Factory Name <span className="required">*</span></label>
+                <input
+                  type="text"
+                  name="name"
+                  value={formData.name}
                   onChange={handleChange}
+                  required
                 />
               </div>
-
               <div className="form-group">
-                <label className="form-label">Upload Design File (Optional)</label>
-                <div className="file-upload-wrapper">
-                  <label className="file-upload-label">
-                    <input
-                      name="artworkImage"
-                      type="file"
-                      accept="image/jpeg,image/png,application/pdf,.ai,.eps"
-                      className="file-upload-input"
-                      onChange={handleChange}
-                      ref={fileInputRef}
-                    />
-                    <div className="file-upload-content">
-                      {formData.artworkImage ? (
-                        <span className="file-selected">{formData.artworkImage.name}</span>
-                      ) : (
-                        <>
-                          <svg className="file-upload-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                          </svg>
-                          <span className="file-upload-text">Click to upload or drag and drop</span>
-                          <span className="file-upload-hint">JPEG, PNG, PDF, AI, EPS (Max. 10MB)</span>
-                        </>
+                <label>Email Address <span className="required">*</span></label>
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>Mobile Number <span className="required">*</span></label>
+                <input
+                  type="tel"
+                  name="mobile"
+                  value={formData.mobile}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="form-section">
+              <h2>Production Details</h2>
+              <div className="form-group">
+                <label>Material <span className="required">*</span></label>
+                <select
+                  name="material"
+                  value={formData.material}
+                  onChange={handleChange}
+                  required
+                >
+                  <option value="Cotton">Cotton</option>
+                  <option value="Polyester">Polyester</option>
+                  <option value="Linen">Linen</option>
+                  <option value="Silk">Silk</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Quantity <span className="required">*</span></label>
+                <input
+                  type="number"
+                  name="quantity"
+                  min="1"
+                  value={formData.quantity}
+                  onChange={handleChange}
+                  required
+                />
+                <p className="quantity-note">
+                  {formData.quantity > 30 
+                    ? "✓ Bulk order discount applied (LKR 1,500/unit)"
+                    : "Regular pricing (LKR 2,000/unit)"}
+                </p>
+              </div>
+            </div>
+
+            <div className="form-section">
+              <h2>Artwork Details</h2>
+              <div className="form-group checkbox-group">
+                <input
+                  type="checkbox"
+                  id="artwork"
+                  name="artwork"
+                  checked={formData.artwork}
+                  onChange={handleChange}
+                />
+                <label htmlFor="artwork">
+                  Include custom artwork (+LKR 5,000)
+                </label>
+              </div>
+
+              {formData.artwork && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <div className="form-group">
+                    <label>Upload Artwork File</label>
+                    <div 
+                      className="file-upload-area"
+                      onClick={() => fileInputRef.current.click()}
+                    >
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileChange}
+                        accept="image/*,.pdf,.ai,.eps"
+                        style={{ display: 'none' }}
+                      />
+                      <p>Drag & drop files or click to browse</p>
+                      <p className="file-types">Supports: PNG, JPG, PDF, AI, EPS (Max 10MB)</p>
+                      {formData.artworkFile && (
+                        <p className="file-name">
+                          Selected: {formData.artworkFile.name}
+                        </p>
                       )}
                     </div>
-                  </label>
-                </div>
-              </div>
+                  </div>
+                  <div className="form-group">
+                    <label>Artwork Description</label>
+                    <textarea
+                      name="artworkText"
+                      value={formData.artworkText}
+                      onChange={handleChange}
+                      placeholder="Describe your artwork requirements..."
+                    />
+                  </div>
+                </motion.div>
+              )}
             </div>
-          )}
 
-          <div className="price-summary">
-            <h3>Order Summary</h3>
-            <div className="price-grid">
-              <div>Unit Price:</div>
-              <div className="text-right">Rs. {priceDetails.unitPrice.toLocaleString()}</div>
-              <div>Artwork Fee:</div>
-              <div className="text-right">{formData.artwork ? "Rs. 5,000" : "Rs. 0"}</div>
-              <div className="border-t border-gray-200 pt-2 font-medium">Total:</div>
-              <div className="border-t border-gray-200 pt-2 text-right font-bold text-primary">
-                Rs. {priceDetails.total.toLocaleString()}
-              </div>
-              <div>Advance (50%):</div>
-              <div className="text-right">Rs. {priceDetails.advance.toLocaleString()}</div>
-              <div>Balance:</div>
-              <div className="text-right">Rs. {priceDetails.balance.toLocaleString()}</div>
-            </div>
-          </div>
+            <motion.button 
+              type="submit" 
+              className="submit-order-button"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              Submit Order
+            </motion.button>
+            {error && <p className="error-message">{error}</p>}
+          </motion.form>
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="submit-button w-full"
+          <motion.div 
+            className="order-summary"
+            initial={{ x: 20, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
           >
-            {isSubmitting ? (
-              <span className="flex items-center justify-center">
-                <svg
-                  className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  ></circle>
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 4.824 3 7.938l3-2.647z"
-                  ></path>
-                </svg>
-                Processing...
-              </span>
-            ) : (
-              "Submit Order"
-            )}
-          </button>
-        </form>
-      </div>
+            <h2>Order Summary</h2>
+            <div className="summary-grid">
+              <div className="summary-item">
+                <span>Material:</span>
+                <span>{formData.material}</span>
+              </div>
+              <div className="summary-item">
+                <span>Quantity:</span>
+                <span>{formData.quantity} units</span>
+              </div>
+              <div className="summary-item">
+                <span>Unit Price:</span>
+                <span>LKR {unitPrice.toLocaleString()}</span>
+              </div>
+              <div className="summary-item">
+                <span>Subtotal:</span>
+                <span>LKR {subtotal.toLocaleString()}</span>
+              </div>
+              {formData.artwork && (
+                <div className="summary-item">
+                  <span>Artwork Fee:</span>
+                  <span>LKR {artworkFee.toLocaleString()}</span>
+                </div>
+              )}
+              <div className="summary-total">
+                <span>Total Amount:</span>
+                <span>LKR {total.toLocaleString()}</span>
+              </div>
+            </div>
 
-      <SuccessModal
+            <div className="delivery-info">
+              <h3>Production Timeline</h3>
+              <p>Standard production time is 2-3 weeks from order confirmation.</p>
+              <p>Rush production available (additional charges apply).</p>
+            </div>
+          </motion.div>
+        </div>
+      </motion.div>
+
+      <SuccessModal 
         isOpen={showSuccessModal}
         onClose={() => setShowSuccessModal(false)}
-        orderId={submitStatus.orderId}
-        email={submittedEmail}
+        orderId={orderId}
+        email={formData.email}
+        onDownloadInvoice={handleDownloadInvoice}
       />
-    </div>
+    </Layout>
   );
-}
+};
+
+export default OrderForm;

@@ -23,11 +23,20 @@ const SuccessModal = ({ isOpen, onClose, orderId, email }) => {
     setDownloadError(null);
     setIsDownloading(true);
     try {
-      const url = `http://localhost:5000/api/orders/${orderId}/invoice/public?email=${encodeURIComponent(email || '')}`;
-      console.log('Fetching invoice from:', url); // Debug log
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        throw new Error('No admin token found. Please log in.');
+      }
+
+      const url = `http://localhost:5000/api/orders/${orderId}/invoice`; // Use admin endpoint
+      console.log('Fetching invoice from:', url, 'with token:', token); // Debug log
+
       const response = await fetch(url, {
         method: 'GET',
-        headers: { 'Accept': 'application/pdf' },
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/pdf',
+        },
       });
 
       if (!response.ok) {
@@ -46,7 +55,7 @@ const SuccessModal = ({ isOpen, onClose, orderId, email }) => {
       window.URL.revokeObjectURL(urlBlob);
     } catch (err) {
       console.error('Download error:', err);
-      setDownloadError('Failed to download invoice. Please try again or contact support.');
+      setDownloadError(`Failed to download invoice. ${err.message || 'Please try again or contact support.'}`);
     } finally {
       setIsDownloading(false);
     }

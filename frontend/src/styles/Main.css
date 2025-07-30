@@ -397,40 +397,6 @@ body {
   background: #dc2626;
 }
 
-/* Admin Login */
-.admin-login-container {
-  min-height: 100vh;
-  background: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
-}
-
-.login-card {
-  max-width: 500px;
-  width: 100%;
-  background: #000000;
-  border-radius: 15px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-  padding: 2.5rem;
-  animation: fadeInUp 0.5s ease-out forwards;
-  border: 1px solid #ffffff;
-}
-
-.login-header {
-  text-align: center;
-  margin-bottom: 2rem;
-}
-
-.login-header h2 {
-  font-size: 2.5rem;
-  font-weight: 700;
-  color: #ffffff;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
 /* Forms */
 .form-group {
   margin-bottom: 1.5rem;
