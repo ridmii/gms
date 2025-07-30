@@ -9,6 +9,7 @@ const router = Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Multer configuration
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, 'uploads/');
@@ -32,7 +33,9 @@ const upload = multer({
     }
   },
   limits: { fileSize: 10 * 1024 * 1024 },
-}).single('artworkImage');
+}).fields([
+  { name: 'artworkImage', maxCount: 1 }
+]);
 
 router.post('/', (req, res, next) => {
   console.log('POST /api/orders with headers:', req.headers['content-type']);
@@ -42,7 +45,8 @@ router.post('/', (req, res, next) => {
         console.error('Multer error:', err.message);
         return res.status(400).json({ error: err.message });
       }
-      console.log(`Incoming POST request to /api/orders with body:`, req.body); // Log after multer
+      console.log(`Incoming POST request to /api/orders with body:`, req.body); // Log body
+      console.log(`Files received:`, req.files); // Log files
       createOrder(req, res);
     });
   } else {
@@ -53,36 +57,56 @@ router.post('/', (req, res, next) => {
 
 async function createOrder(req, res) {
   try {
-    console.log('Received data:', req.body, 'File:', req.file);
-    const { name, email, mobile, material, quantity, artwork, artworkText, priceDetails } = req.body;
+    // Explicitly access form fields from req.body
+    const { name, email, mobile, address, material, quantity, artwork, artworkText, priceDetails } = req.body;
+    console.log('Parsed request body:', { name, email, mobile, address, material, quantity, artwork, artworkText, priceDetails }); // Debug all fields
 
-    if (!name || !email || !material || !quantity) {
-      console.error('Missing required fields:', { name, email, material, quantity });
-      return res.status(400).json({ error: 'Missing required fields: name, email, material, quantity' });
+    // Validate all required fields
+    if (!name || !email || !mobile || !address || !material || !quantity) {
+      console.error('Missing required fields:', { name, email, mobile, address, material, quantity });
+      return res.status(400).json({ error: 'All required fields must be filled: name, email, mobile, address, material, quantity' });
     }
+
+    // Parse and validate priceDetails
+    const parsedPriceDetails = typeof priceDetails === 'string' ? JSON.parse(priceDetails) : priceDetails || {};
+    const unitPrice = parsedPriceDetails.unitPrice || (parseInt(quantity) > 30 ? 1500 : 2000);
+    const artworkFee = parsedPriceDetails.artworkFee || (artwork === 'true' ? 5000 : 0);
+    const subtotal = parsedPriceDetails.subtotal || parseInt(quantity) * unitPrice;
+    const total = parsedPriceDetails.total || subtotal + artworkFee;
+    const advance = parsedPriceDetails.advance || Math.round(total * 0.5);
+    const balance = parsedPriceDetails.balance || total - advance;
 
     const orderData = {
       name,
       email,
-      mobile: mobile || '',
-      material: material || '',
-      quantity: Number(quantity) || 1,
-      artwork: artwork === 'true' || artwork === true,
+      mobile,
+      address: address || '', // Ensure address is included, fallback to empty if undefined
+      material,
+      quantity: parseInt(quantity),
+      artwork: artwork === 'true',
       artworkText: artworkText || '',
-      artworkImage: req.file ? `/uploads/${req.file.filename}` : '',
-      priceDetails: priceDetails ? JSON.parse(typeof priceDetails === 'string' ? priceDetails : JSON.stringify(priceDetails)) : { unitPrice: 2000, total: 2000 },
+      artworkImage: req.files?.artworkImage ? `/uploads/${req.files.artworkImage[0].filename}` : '',
+      priceDetails: {
+        unitPrice,
+        subtotal,
+        artworkFee,
+        total,
+        advance,
+        balance
+      },
       date: new Date(),
     };
 
     const newOrder = new Order(orderData);
-    await newOrder.save();
+    const savedOrder = await newOrder.save();
+    console.log('Order saved successfully:', savedOrder);
     res.status(201).json({
       success: true,
       message: 'Order saved successfully!',
-      order: newOrder,
+      order: savedOrder,
     });
   } catch (error) {
-    console.error('Error saving order:', error.message);
+    console.error('Error saving order:', error.message, error.stack);
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to save order',

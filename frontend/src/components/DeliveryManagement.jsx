@@ -1,63 +1,46 @@
 import { useState, useEffect } from 'react';
-import { FiSearch, FiChevronDown, FiRefreshCw, FiCheck, FiTruck, FiClock, FiPackage } from 'react-icons/fi';
+import { FiSearch, FiChevronDown, FiRefreshCw, FiCheck, FiTruck, FiClock, FiPackage, FiPlus, FiTrash } from 'react-icons/fi';
 import AdminSidebar from './AdminSidebar';
-
+import axios from 'axios';
 
 const DeliveryManagement = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [deliveries, setDeliveries] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+  const [drivers, setDrivers] = useState([]);
+  const [error, setError] = useState(null);
+  const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImFkbWluQGRpbWFsc2hhLmNvbSIsImlhdCI6MTc1Mzg1MjY2MiwiZXhwIjoxNzUzOTM5MDYyfQ.83fpdOuUmPWtgCOpk5r1btJMXIOg6lSOp_vdSg3oHmQ'; // Replace with the token from login
 
   useEffect(() => {
-    // Simulate API fetch
-    const fetchDeliveries = () => {
-      setIsLoading(true);
-      setTimeout(() => {
-        setDeliveries([
-          {
-            deliveryId: 'DEL-001',
-            orderId: 'ORD-001',
-            customer: 'ABC Textiles',
-            address: '123 Textile Road, Fabricville',
-            assignedTo: 'John Smith',
-            scheduledDate: '2023-06-20',
-            status: 'Ready',
-          },
-          {
-            deliveryId: 'DEL-002',
-            orderId: 'ORD-002',
-            customer: 'XYZ Fabrics',
-            address: '456 Fashion Ave, Styletown',
-            assignedTo: 'Mary Johnson',
-            scheduledDate: '2023-06-22',
-            status: 'In Progress',
-          },
-          {
-            deliveryId: 'DEL-003',
-            orderId: 'ORD-004',
-            customer: 'Style Limited',
-            address: '789 Design Blvd, Trendville',
-            assignedTo: 'Robert Brown',
-            scheduledDate: '2023-06-19',
-            status: 'Delivered',
-          },
-          {
-            deliveryId: 'DEL-004',
-            orderId: 'ORD-006',
-            customer: 'Garment World',
-            address: '101 Sewing Lane, Patterntown',
-            assignedTo: 'Lisa Davis',
-            scheduledDate: '2023-06-25',
-            status: 'Ready',
-          },
-        ]);
+    const fetchData = async () => {
+      if (!token) {
+        setError('No token available. Please login.');
         setIsLoading(false);
-      }, 1000);
+        return;
+      }
+      setIsLoading(true);
+      try {
+        const [deliveriesResponse, driversResponse] = await Promise.all([
+          axios.get('http://localhost:5000/api/deliveries', {
+            headers: { Authorization: `Bearer ${token}` }
+          }),
+          axios.get('http://localhost:5000/api/drivers', {
+            headers: { Authorization: `Bearer ${token}` }
+          })
+        ]);
+        setDeliveries(deliveriesResponse.data);
+        setDrivers(driversResponse.data);
+      } catch (err) {
+        console.error('Fetch Error:', err.response?.data || err.message);
+        setError('Failed to load data. Please check the token or server.');
+      } finally {
+        setIsLoading(false);
+      }
     };
 
-    fetchDeliveries();
-  }, []);
+    fetchData();
+  }, [token]);
 
   const handleSort = (key) => {
     let direction = 'asc';
@@ -114,10 +97,52 @@ const DeliveryManagement = () => {
     }
   };
 
+  const assignDriver = async (deliveryId, driverId) => {
+    if (!token) {
+      setError('No token available. Please login.');
+      return;
+    }
+    try {
+      await axios.put(`http://localhost:5000/api/deliveries/${deliveryId}/assign`, { driverId }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setDeliveries(prev =>
+        prev.map(delivery =>
+          delivery.deliveryId === deliveryId ? { ...delivery, assignedTo: driverId, status: 'In Progress' } : delivery
+        )
+      );
+      setError(null);
+    } catch (err) {
+      console.error('Assign Error:', err.response?.data || err.message);
+      setError('Failed to assign driver. Please try again.');
+    }
+  };
+
+  const removeDriver = async (deliveryId) => {
+    if (!token) {
+      setError('No token available. Please login.');
+      return;
+    }
+    try {
+      await axios.put(`http://localhost:5000/api/deliveries/${deliveryId}/remove-driver`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setDeliveries(prev =>
+        prev.map(delivery =>
+          delivery.deliveryId === deliveryId ? { ...delivery, assignedTo: '', status: 'Ready' } : delivery
+        )
+      );
+      setError(null);
+    } catch (err) {
+      console.error('Remove Error:', err.response?.data || err.message);
+      setError('Failed to remove driver. Please try again.');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
-       <AdminSidebar activePage="deliveries" />
-      <div className="max-w-7xl mx-auto">
+      <AdminSidebar activePage="deliveries" />
+      <div className="max-w-7xl mx-auto ml-64">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Dimalsha Fashions</h1>
           <h2 className="text-2xl font-semibold text-gray-700 mt-2">Delivery Management</h2>
@@ -149,6 +174,8 @@ const DeliveryManagement = () => {
               <div className="flex justify-center items-center py-12">
                 <FiRefreshCw className="animate-spin text-indigo-600 text-2xl" />
               </div>
+            ) : error ? (
+              <div className="text-center text-red-600 py-4">{error}</div>
             ) : (
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
@@ -261,7 +288,7 @@ const DeliveryManagement = () => {
                         {delivery.address}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {delivery.assignedTo}
+                        {delivery.assignedTo || 'Unassigned'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {new Date(delivery.scheduledDate).toLocaleDateString('en-US', {
@@ -274,14 +301,28 @@ const DeliveryManagement = () => {
                         {getStatusBadge(delivery.status)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <button
-                          className="text-indigo-600 hover:text-indigo-900 transition-colors duration-200"
-                          onClick={() => {
-                            /* Handle status update */
-                          }}
+                        <select
+                          className="mr-2 p-1 border rounded text-sm"
+                          value={delivery.assignedTo || ''}
+                          onChange={(e) => assignDriver(delivery.deliveryId, e.target.value)}
+                          disabled={delivery.status === 'Delivered'}
                         >
-                          Update Status
-                        </button>
+                          <option value="">Assign Driver</option>
+                          {drivers.map((driver) => (
+                            <option key={driver._id} value={driver._id}>
+                              {driver.name}
+                            </option>
+                          ))}
+                        </select>
+                        {delivery.assignedTo && (
+                          <button
+                            className="text-red-600 hover:text-red-900 transition-colors duration-200 ml-2"
+                            onClick={() => removeDriver(delivery.deliveryId)}
+                            disabled={delivery.status === 'Delivered'}
+                          >
+                            <FiTrash />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

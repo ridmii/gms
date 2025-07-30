@@ -13,6 +13,7 @@ const OrderForm = () => {
     name: '',
     email: '',
     mobile: '',
+    address: '',
     material: 'Cotton',
     quantity: 30,
     artworkFile: null,
@@ -22,6 +23,7 @@ const OrderForm = () => {
 
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [orderId, setOrderId] = useState('');
+  const [submittedEmail, setSubmittedEmail] = useState(''); // Store email at submission
   const fileInputRef = useRef(null);
   const [error, setError] = useState(null);
 
@@ -48,7 +50,7 @@ const OrderForm = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.name || !formData.email || !formData.mobile || !formData.material || !formData.quantity) {
+    if (!formData.name || !formData.email || !formData.mobile || !formData.address || !formData.material || !formData.quantity) {
       setError('All required fields must be filled.');
       return;
     }
@@ -57,6 +59,7 @@ const OrderForm = () => {
     formDataToSend.append('name', formData.name);
     formDataToSend.append('email', formData.email);
     formDataToSend.append('mobile', formData.mobile);
+    formDataToSend.append('address', formData.address);
     formDataToSend.append('material', formData.material);
     formDataToSend.append('quantity', formData.quantity);
     formDataToSend.append('artwork', formData.artwork);
@@ -72,14 +75,18 @@ const OrderForm = () => {
     formDataToSend.append('priceDetails', JSON.stringify({ unitPrice, subtotal, artworkFee, total, advance, balance }));
 
     try {
+      const token = localStorage.getItem('adminToken');
       const response = await axios.post('http://localhost:5000/api/orders', formDataToSend, {
         headers: { 
           'Content-Type': 'multipart/form-data',
-          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImFkbWluQGRpbWFsc2hhLmNvbSIsImlhdCI6MTc1Mzg0NjkzNiwiZXhwIjoxNzUzOTMzMzM2fQ.mNm2eWlyUuGrjKldGCkkGuztPxBXnue5By1dI6A4pbc` // Replace with your actual token
+          'Authorization': `Bearer ${token || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImFkbWluQGRpbWFsc2hhLmNvbSIsImlhdCI6MTc1Mzg1Mjc1MSwiZXhwIjoxNzUzOTM5MTUxfQ.rluCGGNCNmVIYjj_7JLpluVa9lRAAvjIzZAEDyOoTy4'}` 
         },
       });
-      const newOrderId = response.data._id;
+      console.log('API Response:', response.data); // Debug
+      const newOrderId = response.data.order?._id || response.data._id;
+      if (!newOrderId) throw new Error('Order ID not returned from server');
       setOrderId(newOrderId);
+      setSubmittedEmail(formData.email); // Save email at submission
       setShowSuccessModal(true);
       setError(null);
     } catch (err) {
@@ -91,6 +98,7 @@ const OrderForm = () => {
           name: '',
           email: '',
           mobile: '',
+          address: '',
           material: 'Cotton',
           quantity: 30,
           artworkFile: null,
@@ -99,25 +107,6 @@ const OrderForm = () => {
         });
         if (fileInputRef.current) fileInputRef.current.value = '';
       }
-    }
-  };
-
-  const handleDownloadInvoice = async () => {
-    try {
-      const invoiceResponse = await axios.get(`http://localhost:5000/api/orders/${orderId}/invoice/public`, {
-        params: { email: formData.email },
-        responseType: 'blob',
-      });
-      const url = window.URL.createObjectURL(new Blob([invoiceResponse.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `Invoice-${orderId}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode.removeChild(link);
-    } catch (err) {
-      console.error('Download Error:', err.response?.data || err.message);
-      setError(`Failed to download invoice. ${err.response?.data?.message || err.message || 'Please try again.'}`);
     }
   };
 
@@ -175,6 +164,16 @@ const OrderForm = () => {
                   type="tel"
                   name="mobile"
                   value={formData.mobile}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>Address <span className="required">*</span></label>
+                <input
+                  type="text"
+                  name="address"
+                  value={formData.address}
                   onChange={handleChange}
                   required
                 />
@@ -332,8 +331,7 @@ const OrderForm = () => {
         isOpen={showSuccessModal}
         onClose={() => setShowSuccessModal(false)}
         orderId={orderId}
-        email={formData.email}
-        onDownloadInvoice={handleDownloadInvoice}
+        email={submittedEmail || formData.email} // Fallback to formData.email
       />
     </Layout>
   );

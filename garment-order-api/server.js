@@ -10,6 +10,8 @@ import multer from 'multer';
 import fs from 'fs';
 import PDFDocument from 'pdfkit';
 import Order from './models/Order.js';
+import Delivery from './models/Delivery.js';
+import Driver from './models/Driver.js';
 import fastCsv from 'fast-csv';
 
 dotenv.config();
@@ -18,7 +20,7 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || '893a5fd0c3de8d1ec5355d64273f913afef53b1b5e9213d91d82fe286f69941a';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@dimalsha.com';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '$2a$10$KX9b1z3X8qY6Z7W8V9U0O.tY2Z3X4qY5Z6W7V8U9O0P1Q2R3S4T5';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '$2b$10$z4ADspMJ1eBzmRF34Wc38.TXLwYTpd9w67LfrSZaGOHNMGy0zCMsW';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -65,43 +67,101 @@ const upload = multer({
   },
   limits: { fileSize: 10 * 1024 * 1024 },
 }).fields([
-  { name: 'name', maxCount: 1 },
-  { name: 'email', maxCount: 1 },
-  { name: 'mobile', maxCount: 1 },
-  { name: 'material', maxCount: 1 },
-  { name: 'quantity', maxCount: 1 },
-  { name: 'artwork', maxCount: 1 },
-  { name: 'artworkText', maxCount: 1 },
-  { name: 'artworkFile', maxCount: 1 }
+  { name: 'artworkFile', maxCount: 1 }, // Correct field name
 ]);
 
 // Express middleware
 app.use(cors({ origin: 'http://localhost:5173' }));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 app.use('/uploads', express.static('uploads'));
 
 // Routes
+app.get('/api/deliveries', authenticateAdmin, async (req, res) => {
+  try {
+    const deliveries = await Delivery.find().sort({ scheduledDate: -1 });
+    res.json(deliveries);
+  } catch (err) {
+    console.error('Error fetching deliveries:', err);
+    res.status(500).json({ error: 'Failed to fetch deliveries' });
+  }
+});
+
+app.get('/api/drivers', authenticateAdmin, async (req, res) => {
+  try {
+    const drivers = await Driver.find();
+    res.json(drivers);
+  } catch (err) {
+    console.error('Error fetching drivers:', err);
+    res.status(500).json({ error: 'Failed to fetch drivers' });
+  }
+});
+
+app.put('/api/deliveries/:deliveryId/assign', authenticateAdmin, async (req, res) => {
+  try {
+    const { driverId } = req.body;
+    if (!driverId) return res.status(400).json({ error: 'Driver ID is required' });
+    const delivery = await Delivery.findOneAndUpdate(
+      { deliveryId: req.params.deliveryId },
+      { assignedTo: driverId, status: 'In Progress' },
+      { new: true, runValidators: true }
+    );
+    if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
+    res.json(delivery);
+  } catch (err) {
+    console.error('Error assigning driver:', err);
+    res.status(500).json({ error: 'Failed to assign driver' });
+  }
+});
+
+app.put('/api/deliveries/:deliveryId/remove-driver', authenticateAdmin, async (req, res) => {
+  try {
+    const delivery = await Delivery.findOneAndUpdate(
+      { deliveryId: req.params.deliveryId },
+      { assignedTo: '', status: 'Ready' },
+      { new: true, runValidators: true }
+    );
+    if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
+    res.json(delivery);
+  } catch (err) {
+    console.error('Error removing driver:', err);
+    res.status(500).json({ error: 'Failed to remove driver' });
+  }
+});
+
 app.get('/orders', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'orders.html'));
 });
 
-// Create Order
-app.post('/api/orders', authenticateAdmin, (req, res, next) => {
-  console.log('POST /api/orders with headers:', req.headers['content-type']);
-  if (req.headers['content-type']?.includes('multipart/form-data')) {
-    upload(req, res, (err) => {
-      if (err) {
-        console.error('Multer error:', err.message);
-        return res.status(400).json({ error: err.message });
-      }
-      const { name, email, mobile, material, quantity, artwork, artworkText, priceDetails } = req.body;
-      if (!name || !email || !mobile || !material || !quantity) {
-        console.error('Missing required fields:', { name, email, material, quantity });
-        return res.status(400).json({ error: 'Missing required fields' });
+app.post('/api/admin/login', async (req, res) => {
+  const { email, password } = req.body;
+  console.log('Login attempt:', { email, providedPassword: password });
+  if (email === ADMIN_EMAIL && (await bcrypt.compare(password, ADMIN_PASSWORD))) {
+    const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '24h' });
+    console.log('Login successful, token generated:', token);
+    return res.json({ token });
+  }
+  console.error('Invalid credentials for email:', email);
+  res.status(401).json({ error: 'Invalid credentials' });
+});
+
+// Create Order (Remove authenticateAdmin for public access)
+app.post('/api/orders', (req, res, next) => {
+  upload(req, res, async (err) => {
+    if (err) {
+      console.error('Upload Error:', err.message);
+      return res.status(400).json({ error: err.message });
+    }
+    try {
+      const { name, email, mobile, address, material, quantity, artwork, artworkText, priceDetails } = req.body;
+      console.log('Received order data:', { name, email, mobile, address, material, quantity, artwork, artworkText, priceDetails }); // Debug log
+
+      if (!name || !email || !mobile || !address || !material || !quantity) {
+        return res.status(400).json({ error: 'All required fields must be filled' });
       }
 
-      const parsedPriceDetails = JSON.parse(priceDetails || '{}');
+      const parsedPriceDetails = typeof priceDetails === 'string' ? JSON.parse(priceDetails) : priceDetails || {};
       const unitPrice = parsedPriceDetails.unitPrice || (parseInt(quantity) > 30 ? 1500 : 2000);
       const artworkFee = parsedPriceDetails.artworkFee || (artwork === 'true' || artwork === 'on' ? 5000 : 0);
       const subtotal = parsedPriceDetails.subtotal || parseInt(quantity) * unitPrice;
@@ -109,32 +169,30 @@ app.post('/api/orders', authenticateAdmin, (req, res, next) => {
       const advance = parsedPriceDetails.advance || Math.round(total * 0.5);
       const balance = parsedPriceDetails.balance || total - advance;
 
-      const orderData = {
+      const artworkImage = req.files?.artworkFile ? `/uploads/${req.files.artworkFile[0].filename}` : '';
+
+      const order = new Order({
         name,
         email,
         mobile,
+        address,
         material,
         quantity: parseInt(quantity),
         artwork: artwork === 'true' || artwork === 'on',
-        artworkText: artworkText || '',
+        artworkText,
+        artworkImage,
         priceDetails: { unitPrice, subtotal, artworkFee, total, advance, balance },
-      };
+        date: new Date(),
+      });
 
-      if (req.files?.artworkFile) {
-        orderData.artworkImage = `/uploads/${req.files.artworkFile[0].filename}`;
-      }
-
-      const order = new Order(orderData);
-      order.save()
-        .then(savedOrder => res.status(201).json(savedOrder))
-        .catch(err => {
-          console.error('Error saving order:', err.message);
-          res.status(500).json({ error: 'Failed to create order', message: err.message });
-        });
-    });
-  } else {
-    res.status(400).json({ error: 'Invalid content type. Use multipart/form-data' });
-  }
+      const savedOrder = await order.save();
+      console.log('Order saved:', savedOrder);
+      res.status(201).json({ success: true, order: savedOrder });
+    } catch (err) {
+      console.error('Order save error:', err);
+      res.status(500).json({ error: 'Failed to save order', message: err.message });
+    }
+  });
 });
 
 // Update Order
@@ -153,14 +211,9 @@ app.put('/api/orders/:id', authenticateAdmin, (req, res, next) => {
   }
 });
 
-app.put('/api/orders/:id/nofile', authenticateAdmin, async (req, res) => {
-  console.log('PUT /api/orders/:id/nofile with body:', req.body);
-  updateOrder(req, res);
-});
-
 async function updateOrder(req, res) {
   try {
-    const { name, email, mobile, material, quantity, artwork, artworkText, priceDetails } = req.body;
+    const { name, email, mobile, address, material, quantity, artwork, artworkText, priceDetails } = req.body;
     if (!name || !email || !material || !quantity) {
       console.error('Missing required fields:', { name, email, material, quantity });
       return res.status(400).json({ error: 'Missing required fields' });
@@ -178,6 +231,7 @@ async function updateOrder(req, res) {
       name,
       email,
       mobile: mobile || '',
+      address: address || '',
       material,
       quantity: parseInt(quantity),
       artwork: artwork === 'true' || artwork === 'on',
@@ -265,7 +319,7 @@ async function generateInvoice(req, res) {
   }
 
   const priceDetails = order.priceDetails || {};
-  const submissionDate = new Date(order.date).toLocaleDateString('en-US', {
+  const submissionDate = new Date(order.createdAt || order.date || Date.now()).toLocaleDateString('en-US', {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
@@ -290,6 +344,7 @@ async function generateInvoice(req, res) {
   doc.text(order.name || 'N/A');
   doc.text(order.email || 'N/A');
   doc.text(order.mobile || 'N/A');
+  doc.text(`Address: ${order.address || 'Not provided'}`);
   doc.moveDown(1);
 
   const tableTop = doc.y;
@@ -364,18 +419,6 @@ async function generateInvoice(req, res) {
   });
 }
 
-app.post('/api/admin/login', async (req, res) => {
-  const { email, password } = req.body;
-  console.log('Login attempt:', { email, providedPassword: password });
-  if (email === ADMIN_EMAIL && (await bcrypt.compare(password, ADMIN_PASSWORD))) {
-    const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '24h' });
-    console.log('Login successful, token generated:', token);
-    return res.json({ token });
-  }
-  console.error('Invalid credentials for email:', email);
-  res.status(401).json({ error: 'Invalid credentials' });
-});
-
 app.get('/api/orders/customer/:email', async (req, res) => {
   try {
     const orders = await Order.find({ email: req.params.email }).sort({ date: -1 });
@@ -423,6 +466,7 @@ app.get('/api/orders/report', authenticateAdmin, async (req, res) => {
       CustomerName: order.name,
       Email: order.email,
       Mobile: order.mobile,
+      Address: order.address || 'Not provided',
       Material: order.material,
       Quantity: order.quantity,
       Artwork: order.artwork ? 'Yes' : 'No',
@@ -432,16 +476,14 @@ app.get('/api/orders/report', authenticateAdmin, async (req, res) => {
     }));
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename=orders-report.csv');
-    fastCsv
-      .write(csvData, { headers: true })
-      .pipe(res);
+    fastCsv.write(csvData, { headers: true }).pipe(res);
   } catch (err) {
     console.error('Error generating report:', err);
     res.status(500).json({ error: 'Failed to generate report' });
   }
 });
 
-// Dashboard stats endpoint (reintegrated from recent version)
+// Dashboard stats endpoint
 app.get('/api/dashboard/stats', authenticateAdmin, async (req, res) => {
   try {
     const totalOrders = await Order.countDocuments();

@@ -23,13 +23,17 @@ const SuccessModal = ({ isOpen, onClose, orderId, email }) => {
     setDownloadError(null);
     setIsDownloading(true);
     try {
+      if (!orderId || !email) {
+        throw new Error('Order ID or email is missing.');
+      }
+
       const token = localStorage.getItem('adminToken');
       if (!token) {
         throw new Error('No admin token found. Please log in.');
       }
 
-      const url = `http://localhost:5000/api/orders/${orderId}/invoice`; // Use admin endpoint
-      console.log('Fetching invoice from:', url, 'with token:', token); // Debug log
+      const url = `http://localhost:5000/api/orders/${orderId}/invoice/public?email=${encodeURIComponent(email)}`;
+      console.log('Fetching invoice from:', url, 'with token:', token);
 
       const response = await fetch(url, {
         method: 'GET',
@@ -88,7 +92,7 @@ const SuccessModal = ({ isOpen, onClose, orderId, email }) => {
           <button
             onClick={handleDownload}
             className="success-button download-button"
-            disabled={isDownloading}
+            disabled={isDownloading || !orderId}
           >
             {isDownloading ? 'Downloading...' : 'Download Invoice'}
           </button>
