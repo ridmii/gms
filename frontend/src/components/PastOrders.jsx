@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import Layout from './Layout'; // Import the Layout component
 import '../styles/Main.css';
 
 const PastOrders = () => {
@@ -33,8 +34,9 @@ const PastOrders = () => {
 
   const handleDownload = async (orderId) => {
     try {
-      const response = await axios.get(`http://localhost:5000/api/orders/${orderId}/invoice`, {
+      const response = await axios.get(`http://localhost:5000/api/orders/${orderId}/invoice/public`, {
         responseType: 'blob',
+        params: { email }, // Pass email as query parameter
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
@@ -50,66 +52,68 @@ const PastOrders = () => {
   };
 
   return (
-    <div className="past-orders-container">
-      <div className="orders-card">
-        <div className="orders-header">
-          <h2>Your Past Orders</h2>
-        </div>
-        <div className="email-form">
-          <label className="form-label">Enter Your Email</label>
-          <div className="flex gap-2">
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="email-input"
-              placeholder="your@email.com"
-            />
-            <button onClick={fetchOrders} className="submit-button">
-              Fetch Orders
-            </button>
+    <Layout activePage="view-orders"> {/* Use Layout with activePage for View Orders */}
+      <div className="past-orders-container">
+        <div className="orders-card">
+          <div className="orders-header">
+            <h2>Your Past Orders</h2>
           </div>
-          {error && <p className="error-message">{error}</p>}
-        </div>
-        {loading ? (
-          <p>Loading...</p>
-        ) : orders.length === 0 ? (
-          <p>No orders found for this email.</p>
-        ) : (
-          <table className="orders-table">
-            <thead>
-              <tr>
-                <th>Order ID</th>
-                <th>Date</th>
-                <th>Material</th>
-                <th>Quantity</th>
-                <th>Total (Rs.)</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((order) => (
-                <tr key={order._id}>
-                  <td>{order._id.slice(-8)}</td>
-                  <td>{new Date(order.date).toLocaleDateString('en-US')}</td>
-                  <td>{order.material}</td>
-                  <td>{order.quantity}</td>
-                  <td>{(order.priceDetails?.total || 0).toLocaleString()}</td>
-                  <td>
-                    <button
-                      onClick={() => handleDownload(order._id)}
-                      className="download-button"
-                    >
-                      Download Invoice
-                    </button>
-                  </td>
+          <div className="email-form">
+            <label className="form-label">Enter Your Email</label>
+            <div className="flex gap-2">
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="email-input"
+                placeholder="your@email.com"
+              />
+              <button onClick={fetchOrders} className="submit-button">
+                Fetch Orders
+              </button>
+            </div>
+            {error && <p className="error-message">{error}</p>}
+          </div>
+          {loading ? (
+            <p>Loading...</p>
+          ) : orders.length === 0 ? (
+            <p>No orders found for this email.</p>
+          ) : (
+            <table className="orders-table">
+              <thead>
+                <tr>
+                  <th>Order ID</th>
+                  <th>Date</th>
+                  <th>Material</th>
+                  <th>Quantity</th>
+                  <th>Total (Rs.)</th>
+                  <th>Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+              </thead>
+              <tbody>
+                {orders.map((order) => (
+                  <tr key={order._id}>
+                    <td>{order._id.slice(-8)}</td>
+                    <td>{new Date(order.date).toLocaleDateString('en-US')}</td>
+                    <td>{order.material}</td>
+                    <td>{order.quantity}</td>
+                    <td>{(order.priceDetails?.total || 0).toLocaleString()}</td>
+                    <td>
+                      <button
+                        onClick={() => handleDownload(order._id)}
+                        className="download-button"
+                      >
+                        Download Invoice
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
-    </div>
+    </Layout>
   );
 };
 
