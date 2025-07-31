@@ -12,6 +12,7 @@ import PDFDocument from 'pdfkit';
 import Order from './models/Order.js';
 import Delivery from './models/Delivery.js';
 import Driver from './models/Driver.js';
+import Employee from './models/Employee.js'; // Import existing Employee model
 import fastCsv from 'fast-csv';
 
 dotenv.config();
@@ -66,9 +67,7 @@ const upload = multer({
     }
   },
   limits: { fileSize: 10 * 1024 * 1024 },
-}).fields([
-  { name: 'artworkFile', maxCount: 1 }, // Correct field name
-]);
+}).fields([{ name: 'artworkFile', maxCount: 1 }]);
 
 // Express middleware
 app.use(cors({ origin: 'http://localhost:5173' }));
@@ -77,76 +76,75 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 app.use('/uploads', express.static('uploads'));
 
+// Delivery Schema and Model (already defined in ./models/Delivery.js, imported above)
+
 // Routes
-app.get('/api/deliveries', authenticateAdmin, async (req, res) => {
+
+// Employee Routes
+app.get('/api/employees', async (req, res) => {
   try {
-    const deliveries = await Delivery.find().sort({ scheduledDate: -1 });
-    res.json(deliveries);
-  } catch (err) {
-    console.error('Error fetching deliveries:', err);
-    res.status(500).json({ error: 'Failed to fetch deliveries' });
+    const employees = await Employee.find();
+    res.json(employees);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching employees' });
   }
 });
 
-app.get('/api/drivers', authenticateAdmin, async (req, res) => {
+app.post('/api/employees', async (req, res) => {
+  const { name, contact, role, department, baseSalary } = req.body;
   try {
-    const drivers = await Driver.find();
-    res.json(drivers);
-  } catch (err) {
-    console.error('Error fetching drivers:', err);
-    res.status(500).json({ error: 'Failed to fetch drivers' });
-  }
-});
-
-app.put('/api/deliveries/:deliveryId/assign', authenticateAdmin, async (req, res) => {
-  try {
-    const { driverId } = req.body;
-    if (!driverId) return res.status(400).json({ error: 'Driver ID is required' });
-    const delivery = await Delivery.findOneAndUpdate(
-      { deliveryId: req.params.deliveryId },
-      { assignedTo: driverId, status: 'In Progress' },
-      { new: true, runValidators: true }
+    if (!name || !contact || !baseSalary) {
+      return res.status(400).json({ message: 'Name, contact, and base salary are required' });
+    }
+    const employee = await Employee.findOneAndUpdate(
+      { name },
+      { contact, role, department, baseSalary, present: false },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
     );
-    if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
-    res.json(delivery);
-  } catch (err) {
-    console.error('Error assigning driver:', err);
-    res.status(500).json({ error: 'Failed to assign driver' });
+    res.status(201).json(employee);
+  } catch (error) {
+    res.status(500).json({ message: 'Error creating/updating employee' });
   }
 });
 
-app.put('/api/deliveries/:deliveryId/remove-driver', authenticateAdmin, async (req, res) => {
+app.put('/api/employees/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, contact, role, department, baseSalary, present } = req.body;
   try {
-    const delivery = await Delivery.findOneAndUpdate(
-      { deliveryId: req.params.deliveryId },
-      { assignedTo: '', status: 'Ready' },
-      { new: true, runValidators: true }
+    const employee = await Employee.findByIdAndUpdate(
+      id,
+      { name, contact, role, department, baseSalary, present },
+      { new: true }
     );
-    if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
-    res.json(delivery);
+    if (!employee) return res.status(404).json({ message: 'Employee not found' });
+    res.json(employee);
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating employee' });
+  }
+});
+
+app.delete('/api/employees/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const employee = await Employee.findByIdAndDelete(id);
+    if (!employee) return res.status(404).json({ message: 'Employee not found' });
+    res.json({ message: 'Employee deleted' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting employee' });
+  }
+});
+
+// Order Routes
+app.get('/api/orders/unassigned', authenticateAdmin, async (req, res) => {
+  try {
+    const orders = await Order.find({ status: 'Pending' }).sort({ date: -1 });
+    res.json(orders);
   } catch (err) {
-    console.error('Error removing driver:', err);
-    res.status(500).json({ error: 'Failed to remove driver' });
+    console.error('Error fetching unassigned orders:', err);
+    res.status(500).json({ error: 'Failed to fetch unassigned orders' });
   }
 });
 
-app.get('/orders', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'orders.html'));
-});
-
-app.post('/api/admin/login', async (req, res) => {
-  const { email, password } = req.body;
-  console.log('Login attempt:', { email, providedPassword: password });
-  if (email === ADMIN_EMAIL && (await bcrypt.compare(password, ADMIN_PASSWORD))) {
-    const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '24h' });
-    console.log('Login successful, token generated:', token);
-    return res.json({ token });
-  }
-  console.error('Invalid credentials for email:', email);
-  res.status(401).json({ error: 'Invalid credentials' });
-});
-
-// Create Order (Remove authenticateAdmin for public access)
 app.post('/api/orders', (req, res, next) => {
   upload(req, res, async (err) => {
     if (err) {
@@ -155,8 +153,6 @@ app.post('/api/orders', (req, res, next) => {
     }
     try {
       const { name, email, mobile, address, material, quantity, artwork, artworkText, priceDetails } = req.body;
-      console.log('Received order data:', { name, email, mobile, address, material, quantity, artwork, artworkText, priceDetails }); // Debug log
-
       if (!name || !email || !mobile || !address || !material || !quantity) {
         return res.status(400).json({ error: 'All required fields must be filled' });
       }
@@ -182,11 +178,11 @@ app.post('/api/orders', (req, res, next) => {
         artworkText,
         artworkImage,
         priceDetails: { unitPrice, subtotal, artworkFee, total, advance, balance },
+        status: 'Pending',
         date: new Date(),
       });
 
       const savedOrder = await order.save();
-      console.log('Order saved:', savedOrder);
       res.status(201).json({ success: true, order: savedOrder });
     } catch (err) {
       console.error('Order save error:', err);
@@ -195,9 +191,7 @@ app.post('/api/orders', (req, res, next) => {
   });
 });
 
-// Update Order
 app.put('/api/orders/:id', authenticateAdmin, (req, res, next) => {
-  console.log('PUT /api/orders/:id with headers:', req.headers['content-type']);
   if (req.headers['content-type']?.includes('multipart/form-data')) {
     upload(req, res, (err) => {
       if (err) {
@@ -215,7 +209,6 @@ async function updateOrder(req, res) {
   try {
     const { name, email, mobile, address, material, quantity, artwork, artworkText, priceDetails } = req.body;
     if (!name || !email || !material || !quantity) {
-      console.error('Missing required fields:', { name, email, material, quantity });
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -244,17 +237,12 @@ async function updateOrder(req, res) {
       const oldOrder = await Order.findById(req.params.id);
       if (oldOrder?.artworkImage) {
         const oldImagePath = path.join(__dirname, oldOrder.artworkImage);
-        if (fs.existsSync(oldImagePath)) {
-          fs.unlinkSync(oldImagePath);
-        }
+        if (fs.existsSync(oldImagePath)) fs.unlinkSync(oldImagePath);
       }
     }
 
     const order = await Order.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
-    if (!order) {
-      console.error('Order not found:', req.params.id);
-      return res.status(404).json({ error: 'Order not found' });
-    }
+    if (!order) return res.status(404).json({ error: 'Order not found' });
     res.json(order);
   } catch (err) {
     console.error('Error updating order:', err.message);
@@ -262,10 +250,111 @@ async function updateOrder(req, res) {
   }
 }
 
-// Admin invoice endpoint
+app.delete('/api/orders/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const order = await Order.findByIdAndDelete(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.artworkImage) {
+      const imagePath = path.join(__dirname, order.artworkImage);
+      if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
+    }
+    res.json({ message: 'Order deleted successfully' });
+  } catch (err) {
+    console.error('Error deleting order:', err);
+    res.status(500).json({ error: 'Failed to delete order' });
+  }
+});
+
+// Delivery Routes
+app.get('/api/deliveries', authenticateAdmin, async (req, res) => {
+  try {
+    const deliveries = await Delivery.find().sort({ scheduledDate: -1 }).populate('orderId', 'name address');
+    res.json(deliveries);
+  } catch (err) {
+    console.error('Error fetching deliveries:', err);
+    res.status(500).json({ error: 'Failed to fetch deliveries' });
+  }
+});
+
+app.post('/api/deliveries', authenticateAdmin, async (req, res) => {
+  try {
+    const { orderId, customer, address, scheduledDate, assignedTo } = req.body;
+    if (!orderId || !customer || !address || !scheduledDate) {
+      return res.status(400).json({ error: 'Order ID, customer, address, and scheduled date are required' });
+    }
+    const deliveryId = `DEL-${Date.now()}`;
+    const delivery = new Delivery({
+      deliveryId,
+      orderId,
+      customer,
+      address,
+      scheduledDate,
+      assignedTo: assignedTo || '',
+    });
+    const savedDelivery = await delivery.save();
+    res.status(201).json(savedDelivery);
+  } catch (err) {
+    console.error('Error creating delivery:', err);
+    res.status(500).json({ error: 'Failed to create delivery' });
+  }
+});
+
+app.put('/api/deliveries/:deliveryId/assign', authenticateAdmin, async (req, res) => {
+  try {
+    const { driverId } = req.body;
+    if (!driverId) return res.status(400).json({ error: 'Driver ID is required' });
+    const delivery = await Delivery.findOneAndUpdate(
+      { deliveryId: req.params.deliveryId },
+      { assignedTo: driverId, status: 'In Progress' },
+      { new: true, runValidators: true }
+    );
+    if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
+    res.json(delivery);
+  } catch (err) {
+    console.error('Error assigning driver:', err);
+    res.status(500).json({ error: 'Failed to assign driver' });
+  }
+});
+
+app.put('/api/deliveries/:deliveryId/remove-driver', authenticateAdmin, async (req, res) => {
+  try {
+    const delivery = await Delivery.findOneAndUpdate(
+      { deliveryId: req.params.deliveryId },
+      { assignedTo: '', status: 'Pending' },
+      { new: true, runValidators: true }
+    );
+    if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
+    res.json(delivery);
+  } catch (err) {
+    console.error('Error removing driver:', err);
+    res.status(500).json({ error: 'Failed to remove driver' });
+  }
+});
+
+// Driver Routes
+app.get('/api/drivers', authenticateAdmin, async (req, res) => {
+  try {
+    const drivers = await Driver.find();
+    res.json(drivers);
+  } catch (err) {
+    console.error('Error fetching drivers:', err);
+    res.status(500).json({ error: 'Failed to fetch drivers' });
+  }
+});
+
+// Admin Login
+app.post('/api/admin/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (email === ADMIN_EMAIL && (await bcrypt.compare(password, ADMIN_PASSWORD))) {
+    const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '24h' });
+    return res.json({ token });
+  }
+  res.status(401).json({ error: 'Invalid credentials' });
+});
+
+// Invoice and Report Routes
 app.get('/api/orders/:id/invoice', authenticateAdmin, async (req, res) => {
   try {
-    console.log(`Admin invoice request for order ID: ${req.params.id}, token: ${req.headers.authorization}`);
     await generateInvoice(req, res);
   } catch (error) {
     console.error('Error generating admin invoice:', error);
@@ -273,29 +362,13 @@ app.get('/api/orders/:id/invoice', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Public invoice endpoint
 app.get('/api/orders/:id/invoice/public', async (req, res) => {
   try {
     const { id } = req.params;
     const { email } = req.query;
-    console.log(`Public invoice request for order ID: ${id}, email: ${email}`);
-    
-    if (!email) {
-      console.error('Email not provided for public invoice');
-      return res.status(400).json({ error: 'Email is required' });
-    }
-
+    if (!email) return res.status(400).json({ error: 'Email is required' });
     const order = await Order.findById(id);
-    if (!order) {
-      console.error(`Order not found for ID: ${id}`);
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    if (order.email !== email) {
-      console.error(`Unauthorized email for order ID: ${id}, provided: ${email}, expected: ${order.email}`);
-      return res.status(401).json({ error: 'Unauthorized: Email does not match order' });
-    }
-
+    if (!order || order.email !== email) return res.status(401).json({ error: 'Unauthorized: Email does not match order' });
     await generateInvoice(req, res);
   } catch (error) {
     console.error('Error generating public invoice:', error);
@@ -303,26 +376,17 @@ app.get('/api/orders/:id/invoice/public', async (req, res) => {
   }
 });
 
-// Invoice generation function
 async function generateInvoice(req, res) {
   const order = await Order.findById(req.params.id);
-  if (!order) {
-    console.error(`Order not found for ID: ${req.params.id}`);
-    return res.status(404).json({ error: 'Order not found' });
-  }
+  if (!order) return res.status(404).json({ error: 'Order not found' });
 
   const tempDir = path.join(__dirname, 'temp');
   const pdfFile = path.join(tempDir, `invoice-${order._id}.pdf`);
-
-  if (!fs.existsSync(tempDir)) {
-    fs.mkdirSync(tempDir);
-  }
+  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
   const priceDetails = order.priceDetails || {};
   const submissionDate = new Date(order.createdAt || order.date || Date.now()).toLocaleDateString('en-US', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
+    day: 'numeric', month: 'long', year: 'numeric',
   });
 
   const doc = new PDFDocument({ margin: 50 });
@@ -410,7 +474,6 @@ async function generateInvoice(req, res) {
     pdfStream.pipe(res);
     pdfStream.on('end', () => {
       fs.unlinkSync(pdfFile);
-      console.log(`Invoice generated and sent for order ID: ${order._id}`);
     });
   });
   stream.on('error', (err) => {
@@ -439,25 +502,6 @@ app.get('/api/orders/admin', authenticateAdmin, async (req, res) => {
   }
 });
 
-app.delete('/api/orders/:id', authenticateAdmin, async (req, res) => {
-  try {
-    const order = await Order.findByIdAndDelete(req.params.id);
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-    if (order.artworkImage) {
-      const imagePath = path.join(__dirname, order.artworkImage);
-      if (fs.existsSync(imagePath)) {
-        fs.unlinkSync(imagePath);
-      }
-    }
-    res.json({ message: 'Order deleted successfully' });
-  } catch (err) {
-    console.error('Error deleting order:', err);
-    res.status(500).json({ error: 'Failed to delete order' });
-  }
-});
-
 app.get('/api/orders/report', authenticateAdmin, async (req, res) => {
   try {
     const orders = await Order.find().sort({ date: -1 });
@@ -483,7 +527,6 @@ app.get('/api/orders/report', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Dashboard stats endpoint
 app.get('/api/dashboard/stats', authenticateAdmin, async (req, res) => {
   try {
     const totalOrders = await Order.countDocuments();

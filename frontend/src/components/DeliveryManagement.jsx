@@ -1,337 +1,297 @@
-import { useState, useEffect } from 'react';
-import { FiSearch, FiChevronDown, FiRefreshCw, FiCheck, FiTruck, FiClock, FiPackage, FiPlus, FiTrash } from 'react-icons/fi';
+import { useEffect, useState } from 'react';
+import {
+  FiSearch,
+  FiPlus,
+  FiTruck,
+  FiClock,
+  FiCheck,
+  FiLogOut,
+} from 'react-icons/fi';
 import AdminSidebar from './AdminSidebar';
 import axios from 'axios';
 
 const DeliveryManagement = () => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [timeFilter, setTimeFilter] = useState('all');
   const [deliveries, setDeliveries] = useState([]);
+  const [unassignedOrders, setUnassignedOrders] = useState([]);
+  const [drivers, setDrivers] = useState(['Namal Perera', 'Geeth Kawshal', 'Samantha Pieris']);
   const [isLoading, setIsLoading] = useState(true);
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
-  const [drivers, setDrivers] = useState([]);
   const [error, setError] = useState(null);
-  const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImFkbWluQGRpbWFsc2hhLmNvbSIsImlhdCI6MTc1Mzg1MjY2MiwiZXhwIjoxNzUzOTM5MDYyfQ.83fpdOuUmPWtgCOpk5r1btJMXIOg6lSOp_vdSg3oHmQ'; // Replace with the token from login
+
+  const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImFkbWluQGRpbWFsc2hhLmNvbSIsImlhdCI6MTc1Mzg4NDIxMiwiZXhwIjoxNzUzOTcwNjEyfQ.Gvw3zPSHoB43FRFdwfWTD7_mBzPcJ9uFhjfdskZXnkI'; // Replace with actual token logic
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!token) {
-        setError('No token available. Please login.');
-        setIsLoading(false);
-        return;
-      }
-      setIsLoading(true);
       try {
-        const [deliveriesResponse, driversResponse] = await Promise.all([
+        const [deliveriesRes, ordersRes] = await Promise.all([
           axios.get('http://localhost:5000/api/deliveries', {
-            headers: { Authorization: `Bearer ${token}` }
+            headers: { Authorization: `Bearer ${token}` },
           }),
-          axios.get('http://localhost:5000/api/drivers', {
-            headers: { Authorization: `Bearer ${token}` }
-          })
+          axios.get('http://localhost:5000/api/orders/unassigned', {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
         ]);
-        setDeliveries(deliveriesResponse.data);
-        setDrivers(driversResponse.data);
+        setDeliveries(deliveriesRes.data);
+        setUnassignedOrders(ordersRes.data.filter(order => order.status === 'Pending')); // Filter for Pending status
       } catch (err) {
-        console.error('Fetch Error:', err.response?.data || err.message);
-        setError('Failed to load data. Please check the token or server.');
+        setError('Failed to load data.');
+        console.error('Fetch error:', err);
       } finally {
         setIsLoading(false);
       }
     };
-
     fetchData();
-  }, [token]);
+  }, []);
 
-  const handleSort = (key) => {
-    let direction = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
+  const assignDelivery = async (orderId) => {
+    const order = unassignedOrders.find(o => o._id === orderId);
+    if (!order) return;
+
+    const availableDrivers = drivers.filter(d => !deliveries.some(del => del.assignedTo === d));
+    const driver = availableDrivers.length > 0 ? availableDrivers[0] : drivers[0]; // Rotate or fallback
+
+    try {
+      const deliveryData = {
+        deliveryId: `DEL-${Date.now()}`,
+        orderId: order._id,
+        customer: order.name,
+        address: order.address,
+        scheduledDate: new Date().toISOString(),
+        assignedTo: driver,
+        status: 'Pending',
+      };
+      const response = await axios.post('http://localhost:5000/api/deliveries', deliveryData, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setDeliveries([...deliveries, response.data]);
+      setUnassignedOrders(unassignedOrders.filter(o => o._id !== orderId));
+      setError(null);
+    } catch (err) {
+      setError('Failed to assign delivery.');
+      console.error('Assign error:', err);
     }
-    setSortConfig({ key, direction });
   };
 
-  const sortedDeliveries = [...deliveries].sort((a, b) => {
-    if (sortConfig.key) {
-      if (a[sortConfig.key] < b[sortConfig.key]) {
-        return sortConfig.direction === 'asc' ? -1 : 1;
-      }
-      if (a[sortConfig.key] > b[sortConfig.key]) {
-        return sortConfig.direction === 'asc' ? 1 : -1;
-      }
+  const updateDelivery = async (deliveryId, updates) => {
+    try {
+      const response = await axios.put(`http://localhost:5000/api/deliveries/${deliveryId}/assign`, updates, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setDeliveries(deliveries.map(d => d.deliveryId === deliveryId ? response.data : d));
+      setError(null);
+    } catch (err) {
+      setError('Failed to update delivery.');
+      console.error('Update error:', err);
     }
-    return 0;
-  });
+  };
 
-  const filteredDeliveries = sortedDeliveries.filter(
-    (delivery) =>
-      delivery.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      delivery.deliveryId.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const handleStatusChange = (id, newStatus) => {
+    updateDelivery(id, { driverId: deliveries.find(d => d.deliveryId === id).assignedTo, status: newStatus });
+  };
+
+  const handleDriverChange = (id, newDriver) => {
+    updateDelivery(id, { driverId: newDriver });
+  };
 
   const getStatusBadge = (status) => {
+    const base = 'px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center transition-all';
     switch (status) {
-      case 'Ready':
-        return (
-          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
-            <FiPackage className="mr-1" /> Ready
-          </span>
-        );
       case 'In Progress':
         return (
-          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
+          <span className={`${base} bg-blue-100 text-blue-800`}>
             <FiTruck className="mr-1" /> In Progress
           </span>
         );
       case 'Delivered':
         return (
-          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+          <span className={`${base} bg-green-100 text-green-800`}>
             <FiCheck className="mr-1" /> Delivered
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800">
+          <span className={`${base} bg-yellow-100 text-yellow-800`}>
             <FiClock className="mr-1" /> Pending
           </span>
         );
     }
   };
 
-  const assignDriver = async (deliveryId, driverId) => {
-    if (!token) {
-      setError('No token available. Please login.');
-      return;
-    }
-    try {
-      await axios.put(`http://localhost:5000/api/deliveries/${deliveryId}/assign`, { driverId }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setDeliveries(prev =>
-        prev.map(delivery =>
-          delivery.deliveryId === deliveryId ? { ...delivery, assignedTo: driverId, status: 'In Progress' } : delivery
-        )
-      );
-      setError(null);
-    } catch (err) {
-      console.error('Assign Error:', err.response?.data || err.message);
-      setError('Failed to assign driver. Please try again.');
-    }
-  };
+  const filteredDeliveries = deliveries.filter((d) => {
+    const match = d.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  d.deliveryId.toLowerCase().includes(searchTerm.toLowerCase());
 
-  const removeDriver = async (deliveryId) => {
-    if (!token) {
-      setError('No token available. Please login.');
-      return;
-    }
-    try {
-      await axios.put(`http://localhost:5000/api/deliveries/${deliveryId}/remove-driver`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setDeliveries(prev =>
-        prev.map(delivery =>
-          delivery.deliveryId === deliveryId ? { ...delivery, assignedTo: '', status: 'Ready' } : delivery
-        )
-      );
-      setError(null);
-    } catch (err) {
-      console.error('Remove Error:', err.response?.data || err.message);
-      setError('Failed to remove driver. Please try again.');
-    }
-  };
+    if (timeFilter === 'all') return match;
+
+    const now = new Date();
+    const scheduled = new Date(d.scheduledDate);
+    const cutoff = new Date(now);
+    if (timeFilter === '7days') cutoff.setDate(now.getDate() - 7);
+    else if (timeFilter === '30days') cutoff.setDate(now.getDate() - 30);
+    return match && scheduled >= cutoff;
+  });
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen flex bg-gray-100 font-inter animate-fadeIn">
       <AdminSidebar activePage="deliveries" />
-      <div className="max-w-7xl mx-auto ml-64">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Dimalsha Fashions</h1>
-          <h2 className="text-2xl font-semibold text-gray-700 mt-2">Delivery Management</h2>
-          <p className="text-gray-500 mt-1">Track and manage order deliveries</p>
+
+      <main className="ml-64 w-full p-6 transition-all duration-300 ease-in-out">
+        {/* Header Top Bar */}
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800">Delivery Management</h1>
+            <p className="text-sm text-gray-500">Track and manage order deliveries</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <p className="text-sm font-medium text-gray-800">Admin User</p>
+              <p className="text-xs text-gray-500">admin@dimalsha.com</p>
+            </div>
+            <div className="w-9 h-9 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">
+              AU
+            </div>
+            <FiLogOut className="text-gray-500 hover:text-red-500 cursor-pointer" size={18} />
+          </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6 transition-all duration-300 hover:shadow-lg">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
-            <div>
-              <h3 className="text-lg font-medium text-gray-900">Search Deliveries</h3>
-              <p className="text-sm text-gray-500">Search by customer or delivery ID</p>
-            </div>
-            <div className="mt-4 md:mt-0 relative w-full md:w-64">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <FiSearch className="text-gray-400" />
-              </div>
+        {/* Search & Filter */}
+        <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition mb-6">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-4">
+            {/* Search */}
+            <div className="relative w-full md:w-1/2">
+              <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                <FiSearch />
+              </span>
               <input
                 type="text"
-                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all duration-200"
-                placeholder="Search..."
+                placeholder="Search by customer or delivery ID"
+                className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
+
+            {/* Filter + Button */}
+            <div className="flex items-center gap-4">
+              <select
+                value={timeFilter}
+                onChange={(e) => setTimeFilter(e.target.value)}
+                className="p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 transition"
+              >
+                <option value="all">All Time</option>
+                <option value="7days">Last 7 Days</option>
+                <option value="30days">Last 30 Days</option>
+              </select>
+
+              <button
+                onClick={() => unassignedOrders.length > 0 && assignDelivery(unassignedOrders[0]._id)}
+                className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition-all shadow-md hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                disabled={unassignedOrders.length === 0}
+              >
+                <FiPlus /> Assign Delivery
+              </button>
+            </div>
           </div>
 
-          <div className="overflow-x-auto">
-            {isLoading ? (
-              <div className="flex justify-center items-center py-12">
-                <FiRefreshCw className="animate-spin text-indigo-600 text-2xl" />
+          {/* Unassigned Orders Section */}
+          {unassignedOrders.length > 0 && (
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold mb-2">New Orders to Assign</h2>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm bg-white border border-gray-200 rounded-md">
+                  <thead className="bg-gray-100 text-gray-600 text-left">
+                    <tr>
+                      <th className="px-4 py-3 font-semibold">Order ID</th>
+                      <th className="px-4 py-3 font-semibold">Customer</th>
+                      <th className="px-4 py-3 font-semibold">Address</th>
+                      <th className="px-4 py-3 font-semibold">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {unassignedOrders.map((order) => (
+                      <tr key={order._id} className="hover:bg-gray-50 transition-all">
+                        <td className="px-4 py-3 font-medium">{order._id.slice(-8)}</td>
+                        <td className="px-4 py-3">{order.name}</td>
+                        <td className="px-4 py-3">{order.address}</td>
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => assignDelivery(order._id)}
+                            className="bg-indigo-600 text-white px-3 py-1 rounded-md hover:bg-indigo-700 transition"
+                          >
+                            Assign
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            ) : error ? (
-              <div className="text-center text-red-600 py-4">{error}</div>
-            ) : (
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+            </div>
+          )}
+
+          {/* Delivery Table */}
+          {error && <div className="text-red-500">{error}</div>}
+          {isLoading ? (
+            <div className="text-center text-gray-500">Loading...</div>
+          ) : (
+            <div className="overflow-x-auto transition">
+              <table className="min-w-full text-sm bg-white border border-gray-200 rounded-md">
+                <thead className="bg-gray-100 text-gray-600 text-left">
                   <tr>
-                    <th
-                      scope="col"
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors duration-150"
-                      onClick={() => handleSort('deliveryId')}
-                    >
-                      <div className="flex items-center">
-                        Delivery ID
-                        <FiChevronDown
-                          className={`ml-1 transition-transform duration-200 ${
-                            sortConfig.key === 'deliveryId' && sortConfig.direction === 'desc' ? 'transform rotate-180' : ''
-                          }`}
-                        />
-                      </div>
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors duration-150"
-                      onClick={() => handleSort('orderId')}
-                    >
-                      <div className="flex items-center">
-                        Order ID
-                        <FiChevronDown
-                          className={`ml-1 transition-transform duration-200 ${
-                            sortConfig.key === 'orderId' && sortConfig.direction === 'desc' ? 'transform rotate-180' : ''
-                          }`}
-                        />
-                      </div>
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors duration-150"
-                      onClick={() => handleSort('customer')}
-                    >
-                      <div className="flex items-center">
-                        Customer
-                        <FiChevronDown
-                          className={`ml-1 transition-transform duration-200 ${
-                            sortConfig.key === 'customer' && sortConfig.direction === 'desc' ? 'transform rotate-180' : ''
-                          }`}
-                        />
-                      </div>
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                    >
-                      Address
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors duration-150"
-                      onClick={() => handleSort('assignedTo')}
-                    >
-                      <div className="flex items-center">
-                        Assigned To
-                        <FiChevronDown
-                          className={`ml-1 transition-transform duration-200 ${
-                            sortConfig.key === 'assignedTo' && sortConfig.direction === 'desc' ? 'transform rotate-180' : ''
-                          }`}
-                        />
-                      </div>
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors duration-150"
-                      onClick={() => handleSort('scheduledDate')}
-                    >
-                      <div className="flex items-center">
-                        Scheduled Date
-                        <FiChevronDown
-                          className={`ml-1 transition-transform duration-200 ${
-                            sortConfig.key === 'scheduledDate' && sortConfig.direction === 'desc'
-                              ? 'transform rotate-180'
-                              : ''
-                          }`}
-                        />
-                      </div>
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                    >
-                      Status
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
+                    <th className="px-4 py-3 font-semibold">Delivery ID</th>
+                    <th className="px-4 py-3 font-semibold">Order ID</th>
+                    <th className="px-4 py-3 font-semibold">Customer</th>
+                    <th className="px-4 py-3 font-semibold">Address</th>
+                    <th className="px-4 py-3 font-semibold">Assigned To</th>
+                    <th className="px-4 py-3 font-semibold">Scheduled Date</th>
+                    <th className="px-4 py-3 font-semibold">Status</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="divide-y divide-gray-100">
                   {filteredDeliveries.map((delivery) => (
-                    <tr
-                      key={delivery.deliveryId}
-                      className="hover:bg-gray-50 transition-colors duration-150"
-                    >
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {delivery.deliveryId}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {delivery.orderId}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
-                        {delivery.customer}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
-                        {delivery.address}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {delivery.assignedTo || 'Unassigned'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {new Date(delivery.scheduledDate).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                        })}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        {getStatusBadge(delivery.status)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <tr key={delivery.deliveryId} className="hover:bg-gray-50 transition-all">
+                      <td className="px-4 py-3 font-medium">{delivery.deliveryId}</td>
+                      <td className="px-4 py-3">{delivery.orderId.slice(-8)}</td>
+                      <td className="px-4 py-3">{delivery.customer}</td>
+                      <td className="px-4 py-3">{delivery.address}</td>
+                      <td className="px-4 py-3">
                         <select
-                          className="mr-2 p-1 border rounded text-sm"
+                          className="p-1 border border-gray-300 rounded-md text-sm transition"
                           value={delivery.assignedTo || ''}
-                          onChange={(e) => assignDriver(delivery.deliveryId, e.target.value)}
-                          disabled={delivery.status === 'Delivered'}
+                          onChange={(e) => handleDriverChange(delivery.deliveryId, e.target.value)}
                         >
-                          <option value="">Assign Driver</option>
+                          <option value="">Select Driver</option>
                           {drivers.map((driver) => (
-                            <option key={driver._id} value={driver._id}>
-                              {driver.name}
+                            <option key={driver} value={driver}>
+                              {driver}
                             </option>
                           ))}
                         </select>
-                        {delivery.assignedTo && (
-                          <button
-                            className="text-red-600 hover:text-red-900 transition-colors duration-200 ml-2"
-                            onClick={() => removeDriver(delivery.deliveryId)}
-                            disabled={delivery.status === 'Delivered'}
-                          >
-                            <FiTrash />
-                          </button>
-                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {new Date(delivery.scheduledDate).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        <select
+                          className="p-1 border border-gray-300 rounded-md text-sm transition bg-white"
+                          value={delivery.status}
+                          onChange={(e) => handleStatusChange(delivery.deliveryId, e.target.value)}
+                        >
+                          <option value="Pending">Pending</option>
+                          <option value="In Progress">In Progress</option>
+                          <option value="Delivered">Delivered</option>
+                        </select>
+                        <div className="mt-1">{getStatusBadge(delivery.status)}</div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            )}
-          </div>
+            </div>
+          )}
         </div>
-      </div>
+      </main>
     </div>
   );
 };

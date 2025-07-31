@@ -10,6 +10,8 @@ import CustomerLogin from './components/CustomerLogin';
 import CustomerRegister from './components/CustomerRegister';
 import ProtectedRoute from './components/ProtectedRoute';
 import DeliveryPage from './components/DeliveryManagement'; 
+import Inventory from './components/Inventory'; 
+import Employee from './components/Employee'; 
 
 const App = () => {
   return (
@@ -45,6 +47,8 @@ const App = () => {
             </ProtectedRoute>
           }
         />
+        <Route path="/admin/inventory" element={<Inventory />} />
+        <Route path="/admin/employee" element={<Employee />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>

@@ -1,11 +1,12 @@
-// src/components/AdminSidebar.jsx
-import { Link } from 'react-router-dom';
-import { FiHome, FiShoppingBag, FiTruck, FiPackage, FiDollarSign, FiUsers, FiSettings } from 'react-icons/fi';
+import React from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 
 const AdminSidebar = ({ activePage }) => {
+  const navigate = useNavigate();
+
   const handleLogout = () => {
     localStorage.removeItem('adminToken');
-    window.location.href = '/admin/login';
+    navigate('/admin/login');
   };
 
   return (
@@ -14,45 +15,45 @@ const AdminSidebar = ({ activePage }) => {
       <nav className="space-y-2">
         <Link
           to="/admin/dashboard"
-          className={`block py-2 px-4 rounded flex items-center ${activePage === 'dashboard' ? 'bg-blue-700 text-white' : 'hover:bg-blue-600'}`}
+          className={`block py-2 px-4 rounded ${activePage === 'dashboard' ? 'bg-blue-700 text-white' : 'hover:bg-blue-600'}`}
         >
-          <FiHome className="mr-2" /> Dashboard
+          Dashboard
         </Link>
         <Link
           to="/admin/orders"
-          className={`block py-2 px-4 rounded flex items-center ${activePage === 'orders' ? 'bg-blue-700 text-white' : 'hover:bg-blue-600'}`}
+          className={`block py-2 px-4 rounded ${activePage === 'orders' ? 'bg-blue-700 text-white' : 'hover:bg-blue-600'}`}
         >
-          <FiShoppingBag className="mr-2" /> Orders
+          Orders
         </Link>
         <Link
           to="/admin/deliveries"
-          className={`block py-2 px-4 rounded flex items-center ${activePage === 'deliveries' ? 'bg-blue-700 text-white' : 'hover:bg-blue-600'}`}
+          className={`block py-2 px-4 rounded ${activePage === 'deliveries' ? 'bg-blue-700 text-white' : 'hover:bg-blue-600'}`}
         >
-          <FiTruck className="mr-2" /> Delivery
+          Delivery
         </Link>
         <Link
-          to="#"
-          className="block py-2 px-4 rounded flex items-center hover:bg-blue-600"
+          to="/admin/inventory"
+          className={`block py-2 px-4 rounded ${activePage === 'inventory' ? 'bg-blue-700 text-white' : 'hover:bg-blue-600'}`}
         >
-          <FiPackage className="mr-2" /> Inventory
+          Inventory
         </Link>
         <Link
-          to="#"
-          className="block py-2 px-4 rounded flex items-center hover:bg-blue-600"
+          to="/admin/employee"
+          className={`block py-2 px-4 rounded ${activePage === 'employee' ? 'bg-blue-700 text-white' : 'hover:bg-blue-600'}`}
         >
-          <FiDollarSign className="mr-2" /> Salary
+          Employee
         </Link>
         <Link
-          to="#"
-          className="block py-2 px-4 rounded flex items-center hover:bg-blue-600"
+          to="/admin/income"
+          className={`block py-2 px-4 rounded ${activePage === 'income' ? 'bg-blue-700 text-white' : 'hover:bg-blue-600'}`}
         >
-          <FiUsers className="mr-2" /> Income
+          Salary & Finance
         </Link>
         <button
           onClick={handleLogout}
-          className="w-full text-left py-2 px-4 rounded hover:bg-red-600 mt-4 text-white flex items-center"
+          className="w-full text-left py-2 px-4 rounded hover:bg-red-600 mt-4 text-white"
         >
-          <FiSettings className="mr-2" /> Logout
+          Logout
         </button>
       </nav>
     </aside>
