@@ -11,8 +11,9 @@ import fs from 'fs';
 import PDFDocument from 'pdfkit';
 import Order from './models/Order.js';
 import Delivery from './models/Delivery.js';
-import Driver from './models/Driver.js';
-import Employee from './models/Employee.js'; // Import existing Employee model
+import Employee from './models/Employee.js'; 
+import Salary from './models/Salary.js';
+import Inventory from './models/Inventory.js';
 import fastCsv from 'fast-csv';
 
 dotenv.config();
@@ -76,9 +77,124 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 app.use('/uploads', express.static('uploads'));
 
-// Delivery Schema and Model (already defined in ./models/Delivery.js, imported above)
+// Delivery Routes
+app.get('/api/deliveries', authenticateAdmin, async (req, res) => {
+  try {
+    const deliveries = await Delivery.find().sort({ scheduledDate: -1 }).populate('orderId', 'name address');
+    res.json(deliveries);
+  } catch (err) {
+    console.error('Error fetching deliveries:', err);
+    res.status(500).json({ error: 'Failed to fetch deliveries' });
+  }
+});
 
-// Routes
+app.get('/api/orders/unassigned', authenticateAdmin, async (req, res) => {
+  try {
+    const orders = await Order.find({ status: 'Pending' }).sort({ date: -1 });
+    res.json(orders);
+  } catch (err) {
+    console.error('Error fetching unassigned orders:', err);
+    res.status(500).json({ error: 'Failed to fetch unassigned orders' });
+  }
+});
+
+app.post('/api/deliveries', authenticateAdmin, async (req, res) => {
+  try {
+    const { orderId, customer, address, scheduledDate, assignedTo, status } = req.body;
+    if (!orderId || !customer || !address || !scheduledDate) {
+      return res.status(400).json({ error: 'Order ID, customer, address, and scheduled date are required' });
+    }
+    const deliveryId = `DEL-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`; // Unique ID
+    const delivery = new Delivery({
+      deliveryId,
+      orderId,
+      customer,
+      address,
+      scheduledDate,
+      assignedTo: assignedTo || '',
+      status: status || 'Pending', // Default status
+    });
+    const savedDelivery = await delivery.save();
+    // Update order status to 'In Progress' if delivery is created
+    await Order.findByIdAndUpdate(orderId, { status: 'In Progress' });
+    res.status(201).json(savedDelivery);
+  } catch (err) {
+    console.error('Error creating delivery:', err);
+    res.status(500).json({ error: 'Failed to create delivery', message: err.message });
+  }
+});
+
+app.put('/api/deliveries/:deliveryId/assign', authenticateAdmin, async (req, res) => {
+  try {
+    const { driverId, status } = req.body;
+    if (!driverId) return res.status(400).json({ error: 'Driver ID is required' });
+    const delivery = await Delivery.findOneAndUpdate(
+      { deliveryId: req.params.deliveryId },
+      { assignedTo: driverId, status: status || 'In Progress' },
+      { new: true, runValidators: true }
+    );
+    if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
+    res.json(delivery);
+  } catch (err) {
+    console.error('Error assigning driver:', err);
+    res.status(500).json({ error: 'Failed to assign driver' });
+  }
+});
+
+app.put('/api/deliveries/:deliveryId/remove-driver', authenticateAdmin, async (req, res) => {
+  try {
+    const delivery = await Delivery.findOneAndUpdate(
+      { deliveryId: req.params.deliveryId },
+      { assignedTo: '', status: 'Pending' },
+      { new: true, runValidators: true }
+    );
+    if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
+    res.json(delivery);
+  } catch (err) {
+    console.error('Error removing driver:', err);
+    res.status(500).json({ error: 'Failed to remove driver' });
+  }
+});
+
+app.delete('/api/deliveries/:deliveryId', authenticateAdmin, async (req, res) => {
+  try {
+    const { deliveryId } = req.params;
+    const deletedDelivery = await Delivery.findOneAndDelete({ deliveryId });
+    if (!deletedDelivery) {
+      return res.status(404).json({ message: 'Delivery not found' });
+    }
+    // Optionally revert order status to Pending if needed
+    await Order.findByIdAndUpdate(deletedDelivery.orderId, { status: 'Pending' });
+    res.json({ message: 'Delivery deleted successfully' });
+  } catch (err) {
+    console.error('Error deleting delivery:', err);
+    res.status(500).json({ message: 'Failed to delete delivery: ' + err.message });
+  }
+});
+
+// Auto-create deliveries from pending orders on server start
+const initializeDeliveries = async () => {
+  try {
+    const pendingOrders = await Order.find({ status: 'Pending' });
+    for (const order of pendingOrders) {
+      const existingDelivery = await Delivery.findOne({ orderId: order._id });
+      if (!existingDelivery) {
+        const delivery = new Delivery({
+          deliveryId: `DEL-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          orderId: order._id,
+          customer: order.name,
+          address: order.address || 'Not provided',
+          scheduledDate: new Date(),
+          assignedTo: '',
+        });
+        await delivery.save();
+        console.log(`Created delivery for order ${order._id}`);
+      }
+    }
+  } catch (err) {
+    console.error('Error initializing deliveries:', err);
+  }
+};
 
 // Employee Routes
 app.get('/api/employees', async (req, res) => {
@@ -135,16 +251,6 @@ app.delete('/api/employees/:id', async (req, res) => {
 });
 
 // Order Routes
-app.get('/api/orders/unassigned', authenticateAdmin, async (req, res) => {
-  try {
-    const orders = await Order.find({ status: 'Pending' }).sort({ date: -1 });
-    res.json(orders);
-  } catch (err) {
-    console.error('Error fetching unassigned orders:', err);
-    res.status(500).json({ error: 'Failed to fetch unassigned orders' });
-  }
-});
-
 app.post('/api/orders', (req, res, next) => {
   upload(req, res, async (err) => {
     if (err) {
@@ -265,80 +371,178 @@ app.delete('/api/orders/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Delivery Routes
-app.get('/api/deliveries', authenticateAdmin, async (req, res) => {
+// Salary Routes
+app.get('/api/salaries', authenticateAdmin, async (req, res) => {
   try {
-    const deliveries = await Delivery.find().sort({ scheduledDate: -1 }).populate('orderId', 'name address');
-    res.json(deliveries);
-  } catch (err) {
-    console.error('Error fetching deliveries:', err);
-    res.status(500).json({ error: 'Failed to fetch deliveries' });
+    const salaries = await Salary.find().sort({ paymentDate: -1 });
+    res.json(salaries);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching salaries' });
   }
 });
 
-app.post('/api/deliveries', authenticateAdmin, async (req, res) => {
+app.post('/api/salaries', authenticateAdmin, async (req, res) => {
+  const { id, name, role, amount, paymentDate, paid } = req.body;
   try {
-    const { orderId, customer, address, scheduledDate, assignedTo } = req.body;
-    if (!orderId || !customer || !address || !scheduledDate) {
-      return res.status(400).json({ error: 'Order ID, customer, address, and scheduled date are required' });
+    if (!id || !name || !amount || !paymentDate) {
+      return res.status(400).json({ message: 'ID, name, amount, and payment date are required' });
     }
-    const deliveryId = `DEL-${Date.now()}`;
-    const delivery = new Delivery({
-      deliveryId,
-      orderId,
-      customer,
-      address,
-      scheduledDate,
-      assignedTo: assignedTo || '',
+    const salary = new Salary({
+      id,
+      name,
+      role,
+      amount: amount.replace('LKR ', ''), // Remove 'LKR ' prefix if present
+      paymentDate: new Date(paymentDate),
+      paid: paid || false,
     });
-    const savedDelivery = await delivery.save();
-    res.status(201).json(savedDelivery);
-  } catch (err) {
-    console.error('Error creating delivery:', err);
-    res.status(500).json({ error: 'Failed to create delivery' });
+    const savedSalary = await salary.save();
+    res.status(201).json(savedSalary);
+  } catch (error) {
+    res.status(500).json({ message: 'Error creating salary record' });
   }
 });
 
-app.put('/api/deliveries/:deliveryId/assign', authenticateAdmin, async (req, res) => {
+app.put('/api/salaries/:id', authenticateAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { name, role, amount, paymentDate, paid } = req.body;
   try {
-    const { driverId } = req.body;
-    if (!driverId) return res.status(400).json({ error: 'Driver ID is required' });
-    const delivery = await Delivery.findOneAndUpdate(
-      { deliveryId: req.params.deliveryId },
-      { assignedTo: driverId, status: 'In Progress' },
+    const salary = await Salary.findOneAndUpdate(
+      { id },
+      { name, role, amount: amount.replace('LKR ', ''), paymentDate: new Date(paymentDate), paid },
       { new: true, runValidators: true }
     );
-    if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
-    res.json(delivery);
-  } catch (err) {
-    console.error('Error assigning driver:', err);
-    res.status(500).json({ error: 'Failed to assign driver' });
+    if (!salary) return res.status(404).json({ message: 'Salary record not found' });
+    res.json(salary);
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating salary record' });
   }
 });
 
-app.put('/api/deliveries/:deliveryId/remove-driver', authenticateAdmin, async (req, res) => {
+app.delete('/api/salaries/:id', authenticateAdmin, async (req, res) => {
+  const { id } = req.params;
   try {
-    const delivery = await Delivery.findOneAndUpdate(
-      { deliveryId: req.params.deliveryId },
-      { assignedTo: '', status: 'Pending' },
+    const salary = await Salary.findOneAndDelete({ id });
+    if (!salary) return res.status(404).json({ message: 'Salary record not found' });
+    res.json({ message: 'Salary record deleted' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting salary record' });
+  }
+});
+
+app.put('/api/salaries/:id/mark-paid', authenticateAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const salary = await Salary.findOneAndUpdate(
+      { id },
+      { paid: true },
       { new: true, runValidators: true }
     );
-    if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
-    res.json(delivery);
-  } catch (err) {
-    console.error('Error removing driver:', err);
-    res.status(500).json({ error: 'Failed to remove driver' });
+    if (!salary) return res.status(404).json({ message: 'Salary record not found' });
+    res.json(salary);
+  } catch (error) {
+    res.status(500).json({ message: 'Error marking salary as paid' });
   }
 });
 
-// Driver Routes
-app.get('/api/drivers', authenticateAdmin, async (req, res) => {
+// Inventory Routes
+app.get('/api/inventory', authenticateAdmin, async (req, res) => {
   try {
-    const drivers = await Driver.find();
-    res.json(drivers);
-  } catch (err) {
-    console.error('Error fetching drivers:', err);
-    res.status(500).json({ error: 'Failed to fetch drivers' });
+    const inventory = await Inventory.find().sort({ lastUpdated: -1 });
+    res.json(inventory);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching inventory' });
+  }
+});
+
+app.post('/api/inventory', authenticateAdmin, async (req, res) => {
+  const { id, item, type, quantity, unit, threshold } = req.body;
+  try {
+    if (!id || !item || !quantity || !unit || !threshold) {
+      return res.status(400).json({ message: 'ID, item, quantity, unit, and threshold are required' });
+    }
+    const inventory = new Inventory({
+      id: id || `INV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000)}`, // Unique id with random suffix
+      item,
+      type,
+      quantity: Number(quantity),
+      unit,
+      threshold: Number(threshold),
+      lastUpdated: new Date(),
+    });
+    const savedInventory = await inventory.save();
+    res.status(201).json(savedInventory);
+  } catch (error) {
+    console.error('Error creating inventory item:', error.message);
+    res.status(500).json({ message: 'Error creating inventory item', error: error.message });
+  }
+});
+
+app.put('/api/inventory/:id', authenticateAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { item, type, quantity, unit, threshold } = req.body;
+  try {
+    const inventory = await Inventory.findOneAndUpdate(
+      { id },
+      { item, type, quantity: Number(quantity), unit, threshold: Number(threshold), lastUpdated: new Date() },
+      { new: true, runValidators: true }
+    );
+    if (!inventory) return res.status(404).json({ message: 'Inventory item not found' });
+    res.json(inventory);
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating inventory item' });
+  }
+});
+
+app.put('/api/inventory/:id/add', authenticateAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { quantity: addQty } = req.body;
+  try {
+    if (!addQty || isNaN(Number(addQty))) {
+      return res.status(400).json({ message: 'Valid quantity to add is required' });
+    }
+    const inventory = await Inventory.findOneAndUpdate(
+      { id },
+      { $inc: { quantity: Number(addQty) }, lastUpdated: new Date() },
+      { new: true, runValidators: true }
+    );
+    if (!inventory) return res.status(404).json({ message: 'Inventory item not found' });
+    res.json(inventory);
+  } catch (error) {
+    res.status(500).json({ message: 'Error adding to inventory' });
+  }
+});
+
+app.put('/api/inventory/:id/remove', authenticateAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { quantity: removeQty } = req.body;
+  try {
+    if (!removeQty || isNaN(Number(removeQty)) || Number(removeQty) <= 0) {
+      return res.status(400).json({ message: 'Valid quantity to remove is required' });
+    }
+    const inventory = await Inventory.findOne({ id });
+    if (!inventory) return res.status(404).json({ message: 'Inventory item not found' });
+    if (inventory.quantity < Number(removeQty)) {
+      return res.status(400).json({ message: 'Insufficient quantity' });
+    }
+    const updatedInventory = await Inventory.findOneAndUpdate(
+      { id },
+      { $inc: { quantity: -Number(removeQty) }, lastUpdated: new Date() },
+      { new: true, runValidators: true }
+    );
+    res.json(updatedInventory);
+  } catch (error) {
+    res.status(500).json({ message: 'Error removing from inventory' });
+  }
+});
+
+app.delete('/api/inventory/:id', authenticateAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const inventory = await Inventory.findOneAndDelete({ id });
+    if (!inventory) return res.status(404).json({ message: 'Inventory item not found' });
+    res.json({ message: 'Inventory item deleted' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting inventory item' });
   }
 });
 
@@ -557,6 +761,7 @@ const connectMongoDB = async () => {
         serverSelectionTimeoutMS: 5000,
       });
       console.log('✅ Success! Connected to MongoDB');
+      await initializeDeliveries(); // Initialize deliveries after connection
       return;
     } catch (err) {
       console.error(`❌ Connection attempt failed: ${err.message}`);

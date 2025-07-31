@@ -44,8 +44,8 @@ const AdminSidebar = ({ activePage }) => {
           Employee
         </Link>
         <Link
-          to="/admin/income"
-          className={`block py-2 px-4 rounded ${activePage === 'income' ? 'bg-blue-700 text-white' : 'hover:bg-blue-600'}`}
+          to="/admin/finance"
+          className={`block py-2 px-4 rounded ${activePage === 'finance' ? 'bg-blue-700 text-white' : 'hover:bg-blue-600'}`}
         >
           Salary & Finance
         </Link>

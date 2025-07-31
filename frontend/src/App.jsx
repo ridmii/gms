@@ -12,6 +12,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import DeliveryPage from './components/DeliveryManagement'; 
 import Inventory from './components/Inventory'; 
 import Employee from './components/Employee'; 
+import Finance from './components/Finance'; 
 
 const App = () => {
   return (
@@ -49,6 +50,7 @@ const App = () => {
         />
         <Route path="/admin/inventory" element={<Inventory />} />
         <Route path="/admin/employee" element={<Employee />} />
+        <Route path="/admin/finance" element={<Finance />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>

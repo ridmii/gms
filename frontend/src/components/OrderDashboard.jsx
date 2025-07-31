@@ -133,7 +133,7 @@ const OrderDashboard = () => {
     }
 
     const formDataToSend = new FormData();
-    formDataToSend.append('factoryName', editOrder.factoryName);
+    formDataToSend.append('factoryName', editOrder.name);
     formDataToSend.append('email', editOrder.email);
     formDataToSend.append('mobile', editOrder.mobile);
     formDataToSend.append('material', editOrder.material);
@@ -199,7 +199,7 @@ const OrderDashboard = () => {
     }
 
     const formData = new FormData();
-    formData.append('factoryName', newOrder.factoryName);
+    formData.append('factoryName', newOrder.name);
     formData.append('email', newOrder.email);
     formData.append('mobile', newOrder.mobile);
     formData.append('material', newOrder.material);
@@ -374,7 +374,7 @@ const OrderDashboard = () => {
                     {filteredOrders.map((order) => (
                       <tr key={order._id} className="hover:bg-gray-50 transition-all">
                         <td className="px-4 py-3 font-medium">ORD-{order._id.slice(-8)}</td>
-                        <td className="px-4 py-3">{order.factoryName || 'N/A'}</td>
+                        <td className="px-4 py-3">{order.name || 'N/A'}</td>
                         <td className="px-4 py-3">{order.email || 'N/A'}</td>
                         <td className="px-4 py-3">{order.mobile || 'N/A'}</td>
                         <td className="px-4 py-3">{order.material || 'N/A'}</td>

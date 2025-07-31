@@ -11,9 +11,6 @@ const Home = () => {
         Your browser does not support the video tag.
       </video>
       <div className="content-overlay">
-        <div className="admin-login">
-          <Link to="/admin/login" className="admin-button">I'm the Admin</Link>
-        </div>
         <div className="home-header">
           <h1 className="scissors-animation">Welcome to Dimalsha Fashions</h1>
           <p>Where Fashion Meets You</p>

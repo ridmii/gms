@@ -2,12 +2,13 @@ import mongoose from 'mongoose';
 
 const deliverySchema = new mongoose.Schema({
   deliveryId: { type: String, required: true, unique: true },
-  orderId: { type: String, required: true }, // Links to Order._id
+  orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true },
   customer: { type: String, required: true },
   address: { type: String, required: true },
-  assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Driver', default: null },
   scheduledDate: { type: Date, required: true },
-  status: { type: String, enum: ['Ready', 'In Progress', 'Delivered'], default: 'Ready' },
-});
+  assignedTo: { type: String, default: '' },
+  status: { type: String, enum: ['Pending', 'In Progress', 'Delivered'], default: 'Pending' },
+}, { timestamps: true });
 
-export default mongoose.model('Delivery', deliverySchema);
+const Delivery = mongoose.model('Delivery', deliverySchema);
+export default Delivery;

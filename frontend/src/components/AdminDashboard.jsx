@@ -78,15 +78,24 @@ const AdminDashboard = () => {
           >
             Delivery
           </Link>
-          <a href="#" className="block py-2 px-4 rounded hover:bg-blue-600">
+             <Link 
+            to="/admin/inventory" 
+            className="block py-2 px-4 rounded hover:bg-blue-600"
+          >
             Inventory
-          </a>
-          <a href="#" className="block py-2 px-4 rounded hover:bg-blue-600">
-            Salary
-          </a>
-          <a href="#" className="block py-2 px-4 rounded hover:bg-blue-600">
-            Income
-          </a>
+          </Link>
+           <Link 
+            to="/admin/employee" 
+            className="block py-2 px-4 rounded hover:bg-blue-600"
+          >
+            Employee
+          </Link>
+           <Link 
+            to="/admin/finance" 
+            className="block py-2 px-4 rounded hover:bg-blue-600"
+          >
+            Salary & Finance
+          </Link>
           <button
             onClick={handleLogout}
             className="w-full text-left py-2 px-4 rounded hover:bg-red-600 mt-4 text-white"
