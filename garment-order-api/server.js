@@ -315,12 +315,12 @@ async function updateOrder(req, res) {
   try {
     const { name, email, mobile, address, material, quantity, artwork, artworkText, priceDetails } = req.body;
     if (!name || !email || !material || !quantity) {
-      return res.status(400).json({ error: 'Missing required fields' });
+      return res.status(400).json({ error: 'Missing required fields: name, email, material, quantity' });
     }
 
     const parsedPriceDetails = JSON.parse(priceDetails || '{}');
     const unitPrice = parsedPriceDetails.unitPrice || (parseInt(quantity) > 30 ? 1500 : 2000);
-    const artworkFee = parsedPriceDetails.artworkFee || (artwork === 'true' || artwork === 'on' ? 5000 : 0);
+    const artworkFee = parsedPriceDetails.artworkFee || (artwork === 'true' ? 5000 : 0);
     const subtotal = parsedPriceDetails.subtotal || parseInt(quantity) * unitPrice;
     const total = parsedPriceDetails.total || subtotal + artworkFee;
     const advance = parsedPriceDetails.advance || Math.round(total * 0.5);
@@ -333,7 +333,7 @@ async function updateOrder(req, res) {
       address: address || '',
       material,
       quantity: parseInt(quantity),
-      artwork: artwork === 'true' || artwork === 'on',
+      artwork: artwork === 'true',
       artworkText: artworkText || '',
       priceDetails: { unitPrice, subtotal, artworkFee, total, advance, balance },
     };

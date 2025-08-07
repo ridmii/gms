@@ -83,7 +83,7 @@ const OrderDashboard = () => {
       filtered = (orders || []).filter(
         (order) =>
           order._id?.slice(-8).toLowerCase().includes(query) ||
-          order.factoryName?.toLowerCase().includes(query) ||
+          order.name?.toLowerCase().includes(query) || // Updated from factoryName
           order.email?.toLowerCase().includes(query) ||
           order.mobile?.toLowerCase().includes(query)
       );
@@ -127,23 +127,35 @@ const OrderDashboard = () => {
 
   const handleSaveEdit = async (e) => {
     e.preventDefault();
-    if (!editOrder.factoryName || !editOrder.email || !editOrder.mobile || !editOrder.material || !editOrder.quantity) {
+    if (!editOrder.name || !editOrder.email || !editOrder.mobile || !editOrder.material || !editOrder.quantity) {
       setError('All required fields must be filled.');
       return;
     }
 
+    // Calculate priceDetails
+    const unitPrice = parseInt(editOrder.quantity) > 30 ? 1500 : 2000;
+    const artworkFee = editOrder.artwork ? 5000 : 0;
+    const subtotal = parseInt(editOrder.quantity) * unitPrice;
+    const total = subtotal + artworkFee;
+    const advance = Math.round(total * 0.5);
+    const balance = total - advance;
+    const priceDetails = JSON.stringify({ unitPrice, subtotal, artworkFee, total, advance, balance });
+
     const formDataToSend = new FormData();
-    formDataToSend.append('factoryName', editOrder.name);
+    formDataToSend.append('name', editOrder.name); // Changed from factoryName
     formDataToSend.append('email', editOrder.email);
     formDataToSend.append('mobile', editOrder.mobile);
+    formDataToSend.append('address', editOrder.address || ''); // Ensure address is included
     formDataToSend.append('material', editOrder.material);
     formDataToSend.append('quantity', editOrder.quantity);
-    formDataToSend.append('needsArtwork', editOrder.needsArtwork);
+    formDataToSend.append('artwork', editOrder.artwork);
+    formDataToSend.append('artworkText', editOrder.artworkText || '');
+    formDataToSend.append('priceDetails', priceDetails); // Include priceDetails
     if (editOrder.artworkFile) formDataToSend.append('artworkFile', editOrder.artworkFile);
-    if (editOrder.artworkText) formDataToSend.append('artworkText', editOrder.artworkText);
 
     try {
       const token = localStorage.getItem('adminToken');
+      console.log('Sending edit data:', Object.fromEntries(formDataToSend)); // Debug payload
       const response = await axios.put(`http://localhost:5000/api/orders/${editOrder._id}`, formDataToSend, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
       });
@@ -193,20 +205,21 @@ const OrderDashboard = () => {
 
   const handleNewOrderSubmit = async (e) => {
     e.preventDefault();
-    if (!newOrder.factoryName || !newOrder.email || !newOrder.mobile || !newOrder.material || !newOrder.quantity) {
+    if (!newOrder.name || !newOrder.email || !newOrder.mobile || !newOrder.material || !newOrder.quantity) {
       setError('All required fields must be filled.');
       return;
     }
 
     const formData = new FormData();
-    formData.append('factoryName', newOrder.name);
+    formData.append('name', newOrder.name);
     formData.append('email', newOrder.email);
     formData.append('mobile', newOrder.mobile);
+    formData.append('address', newOrder.address || '');
     formData.append('material', newOrder.material);
     formData.append('quantity', newOrder.quantity);
-    formData.append('needsArtwork', newOrder.needsArtwork);
+    formData.append('artwork', newOrder.needsArtwork);
+    formData.append('artworkText', newOrder.artworkText || '');
     if (newOrder.artworkFile) formData.append('artworkFile', newOrder.artworkFile);
-    if (newOrder.artworkText) formData.append('artworkText', newOrder.artworkText);
 
     try {
       const token = localStorage.getItem('adminToken');
@@ -218,9 +231,10 @@ const OrderDashboard = () => {
       setFilteredOrders((prev) => [...prev, newOrderData]);
       setNewOrderForm(false);
       setNewOrder({
-        factoryName: '',
+        name: '',
         email: '',
         mobile: '',
+        address: '',
         material: 'Cotton',
         quantity: 30,
         artworkFile: null,
@@ -230,7 +244,6 @@ const OrderDashboard = () => {
       if (fileInputRef.current) fileInputRef.current.value = '';
       setToastMessage('New order created successfully');
       setTimeout(() => setToastMessage(null), 5000);
-      await fetchData();
     } catch (err) {
       console.error('Create Error:', err.response?.data);
       setError(`Failed to create order. ${err.response?.data?.message || 'Please check server logs.'}`);
@@ -238,9 +251,10 @@ const OrderDashboard = () => {
   };
 
   const [newOrder, setNewOrder] = useState({
-    factoryName: '',
+    name: '',
     email: '',
     mobile: '',
+    address: '',
     material: 'Cotton',
     quantity: 30,
     artworkFile: null,
@@ -265,20 +279,6 @@ const OrderDashboard = () => {
     );
     setOrders(updatedOrders);
     setFilteredOrders(updatedOrders);
-  };
-
-  const fetchData = async () => {
-    const token = localStorage.getItem('adminToken');
-    try {
-      const ordersResponse = await axios.get('http://localhost:5000/api/orders/admin', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setOrders(ordersResponse.data || []);
-      setFilteredOrders(ordersResponse.data || []);
-    } catch (err) {
-      console.error('Fetch error:', err);
-      setError('Failed to refresh orders.');
-    }
   };
 
   return (
@@ -337,14 +337,7 @@ const OrderDashboard = () => {
                   <option value="all">All Time</option>
                   <option value="7days">Last 7 Days</option>
                   <option value="30days">Last 30 Days</option>
-                </select>
-
-                <button
-                  onClick={() => setNewOrderForm(true)}
-                  className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition-all shadow-md hover:scale-105"
-                >
-                  <FiPlus /> New Order
-                </button>
+                </select>    
               </div>
             </div>
 
@@ -445,10 +438,10 @@ const OrderDashboard = () => {
                       </label>
                       <input
                         type="text"
-                        name="factoryName"
-                        value={editOrder.factoryName || ''}
+                        name="name" // Changed from factoryName
+                        value={editOrder.name || ''}
                         onChange={(e) =>
-                          setEditOrder((prev) => ({ ...prev, factoryName: e.target.value }))
+                          setEditOrder((prev) => ({ ...prev, name: e.target.value }))
                         }
                         required
                         className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -524,26 +517,26 @@ const OrderDashboard = () => {
                       <div className="flex items-center gap-2">
                         <input
                           type="checkbox"
-                          id="needsArtwork"
-                          name="needsArtwork"
-                          checked={editOrder.needsArtwork || false}
+                          id="artwork"
+                          name="artwork"
+                          checked={editOrder.artwork || false}
                           onChange={(e) =>
                             setEditOrder((prev) => ({
                               ...prev,
-                              needsArtwork: e.target.checked,
+                              artwork: e.target.checked,
                             }))
                           }
                           className="h-4 w-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
                         />
                         <label
-                          htmlFor="needsArtwork"
+                          htmlFor="artwork"
                           className="text-sm font-medium text-gray-700"
                         >
                           Include custom artwork (+LKR 5,000)
                         </label>
                       </div>
                     </div>
-                    {editOrder.needsArtwork && (
+                    {editOrder.artwork && (
                       <>
                         <div className="form-group">
                           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -660,8 +653,8 @@ const OrderDashboard = () => {
                       </label>
                       <input
                         type="text"
-                        name="factoryName"
-                        value={newOrder.factoryName}
+                        name="name"
+                        value={newOrder.name}
                         onChange={handleNewOrderChange}
                         required
                         className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -688,6 +681,19 @@ const OrderDashboard = () => {
                         type="tel"
                         name="mobile"
                         value={newOrder.mobile}
+                        onChange={handleNewOrderChange}
+                        required
+                        className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Address *
+                      </label>
+                      <input
+                        type="text"
+                        name="address"
+                        value={newOrder.address}
                         onChange={handleNewOrderChange}
                         required
                         className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -729,14 +735,14 @@ const OrderDashboard = () => {
                       <div className="flex items-center gap-2">
                         <input
                           type="checkbox"
-                          id="needsArtwork"
-                          name="needsArtwork"
+                          id="artwork"
+                          name="artwork"
                           checked={newOrder.needsArtwork}
                           onChange={handleNewOrderChange}
                           className="h-4 w-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
                         />
                         <label
-                          htmlFor="needsArtwork"
+                          htmlFor="artwork"
                           className="text-sm font-medium text-gray-700"
                         >
                           Include custom artwork (+LKR 5,000)
