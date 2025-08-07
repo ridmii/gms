@@ -158,8 +158,7 @@ const AdminDashboard = () => {
                     {recentOrders.map((order) => (
                       <tr key={order._id} className="border-b hover:bg-gray-50 transition duration-200">
                         <td className="p-3">ORD-{order._id.slice(-8)}</td>
-                        <td className="p-3">{order.factoryName || 'N/A'}</td>
-                        <td className="p-3">{order.factoryName || 'N/A'}</td>
+                        <td className="p-3">{order.name || 'N/A'}</td>
                         <td className="p-3">LKR {order.priceDetails?.total || 0}</td>
                         <td className="p-3">{new Date(order.date).toLocaleDateString()}</td>
                         <td className="p-3">{order.status || 'Pending'}</td>
