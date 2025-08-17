@@ -5,10 +5,10 @@ const deliverySchema = new mongoose.Schema({
   orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true },
   customer: { type: String, required: true },
   address: { type: String, required: true },
-  scheduledDate: { type: Date, required: true },
   assignedTo: { type: String, default: '' },
   status: { type: String, enum: ['Pending', 'In Progress', 'Delivered'], default: 'Pending' },
-}, { timestamps: true });
+  completedAt: { type: Date }, // Replaced scheduledDate
+});
 
 const Delivery = mongoose.model('Delivery', deliverySchema);
 export default Delivery;

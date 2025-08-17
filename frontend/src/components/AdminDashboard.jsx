@@ -2,16 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom'; 
 import axios from 'axios';
 import AdminSidebar from './AdminSidebar';
-
+import { FiLogOut } from 'react-icons/fi';
 
 const AdminDashboard = () => {
   const [dashboardStats, setDashboardStats] = useState({
     totalOrders: 0,
     pendingDeliveries: 0,
-    stockLevel: 0,
     monthlyIncome: 0,
   });
   const [recentOrders, setRecentOrders] = useState([]);
+  const [inventoryItems, setInventoryItems] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -26,22 +26,34 @@ const AdminDashboard = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [statsResponse, ordersResponse] = await Promise.all([
+        const [statsResponse, ordersResponse, inventoryResponse] = await Promise.all([
           axios.get('http://localhost:5000/api/dashboard/stats', {
             headers: { Authorization: `Bearer ${token}` },
           }),
           axios.get('http://localhost:5000/api/orders/admin', {
             headers: { Authorization: `Bearer ${token}` },
           }),
+          axios.get('http://localhost:5000/api/inventory', {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
         ]);
-        setDashboardStats(statsResponse.data);
+        console.log('Dashboard Stats:', statsResponse.data);
+        console.log('Inventory Data:', inventoryResponse.data);
+        setDashboardStats({
+          totalOrders: statsResponse.data.totalOrders,
+          pendingDeliveries: statsResponse.data.pendingDeliveries,
+          monthlyIncome: statsResponse.data.monthlyIncome,
+        });
         setRecentOrders(ordersResponse.data.slice(0, 5)); // Top 5 recent orders
+        setInventoryItems(inventoryResponse.data);
         setError(null);
       } catch (err) {
-        console.error('Fetch error:', err);
-        setError('Failed to fetch data. Please log in again.');
-        localStorage.removeItem('adminToken');
-        navigate('/admin/login');
+        console.error('Fetch error:', err.response?.status, err.response?.data || err.message);
+        setError(`Failed to fetch data. Status: ${err.response?.status}. Message: ${err.response?.data?.message || err.message}.`);
+        if (err.response?.status === 401) {
+          localStorage.removeItem('adminToken');
+          navigate('/admin/login');
+        }
       } finally {
         setLoading(false);
       }
@@ -53,6 +65,8 @@ const AdminDashboard = () => {
     localStorage.removeItem('adminToken');
     navigate('/admin/login');
   };
+
+  const lowInventoryItems = inventoryItems.filter(item => item.quantity <= item.threshold);
 
   return (
     <div className="min-h-screen bg-gray-100 flex font-inter">
@@ -78,19 +92,19 @@ const AdminDashboard = () => {
           >
             Delivery
           </Link>
-             <Link 
+          <Link 
             to="/admin/inventory" 
             className="block py-2 px-4 rounded hover:bg-blue-600"
           >
             Inventory
           </Link>
-           <Link 
+          <Link 
             to="/admin/employee" 
             className="block py-2 px-4 rounded hover:bg-blue-600"
           >
             Employee
           </Link>
-           <Link 
+          <Link 
             to="/admin/finance" 
             className="block py-2 px-4 rounded hover:bg-blue-600"
           >
@@ -106,18 +120,36 @@ const AdminDashboard = () => {
       </aside>
       <main className="ml-64 p-6 w-full">
         <header className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-800">Dashboard</h1>
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-800">Dashboard</h1>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <p className="text-sm font-medium text-gray-900">Admin User</p>
+                <p className="text-xs text-gray-500">admin@dimalsha.com</p>
+              </div>
+              <div className="w-10 h-10 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">
+                AU
+              </div>
+              <FiLogOut 
+                className="text-gray-500 hover:text-red-500 cursor-pointer" 
+                size={20} 
+                onClick={handleLogout}
+              />
+            </div>
+          </div>
         </header>
         {error && <div className="bg-red-100 text-red-700 p-4 rounded-lg mb-4">{error}</div>}
         {loading ? (
           <div className="text-center py-4 text-gray-600">Loading...</div>
         ) : (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
               <div className="bg-white p-4 rounded-lg shadow hover:shadow-lg transition duration-300">
                 <h3 className="text-sm text-gray-500">Total Orders</h3>
                 <p className="text-2xl font-semibold text-gray-800">
-                  {dashboardStats.totalOrders} <span className="text-green-500">+12%</span>
+                  {dashboardStats.totalOrders}
                 </p>
               </div>
               <div className="bg-white p-4 rounded-lg shadow hover:shadow-lg transition duration-300">
@@ -127,16 +159,9 @@ const AdminDashboard = () => {
                 </p>
               </div>
               <div className="bg-white p-4 rounded-lg shadow hover:shadow-lg transition duration-300">
-                <h3 className="text-sm text-gray-500">Stock Level</h3>
-                <p className="text-2xl font-semibold text-gray-800">
-                  {dashboardStats.stockLevel}% <span className="text-red-500">-3%</span>
-                </p>
-              </div>
-              <div className="bg-white p-4 rounded-lg shadow hover:shadow-lg transition duration-300">
                 <h3 className="text-sm text-gray-500">Monthly Income</h3>
                 <p className="text-2xl font-semibold text-gray-800">
-                  LKR {dashboardStats.monthlyIncome.toLocaleString()}{' '}
-                  <span className="text-green-500">+8%</span>
+                  LKR {dashboardStats.monthlyIncome.toLocaleString()}
                 </p>
               </div>
             </div>
@@ -148,7 +173,6 @@ const AdminDashboard = () => {
                     <tr>
                       <th className="p-3 font-semibold text-gray-600">Order ID</th>
                       <th className="p-3 font-semibold text-gray-600">Customer</th>
-                      <th className="p-3 font-semibold text-gray-600">Factory Name</th>
                       <th className="p-3 font-semibold text-gray-600">Amount</th>
                       <th className="p-3 font-semibold text-gray-600">Date</th>
                       <th className="p-3 font-semibold text-gray-600">Status</th>
@@ -174,34 +198,37 @@ const AdminDashboard = () => {
                 <table className="w-full text-left">
                   <thead className="bg-gray-100">
                     <tr>
+                      <th className="p-3 font-semibold text-gray-600">ID</th>
                       <th className="p-3 font-semibold text-gray-600">Item</th>
                       <th className="p-3 font-semibold text-gray-600">Quantity</th>
                       <th className="p-3 font-semibold text-gray-600">Threshold</th>
                       <th className="p-3 font-semibold text-gray-600">Status</th>
+                      <th className="p-3 font-semibold text-gray-600">Unit</th>
+                      <th className="p-3 font-semibold text-gray-600">Last Updated</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {[
-                      { item: 'Cotton Fabric', qty: 120, thresh: 150, status: 'Low' },
-                      { item: 'Polyester Blend', qty: 300, thresh: 200, status: 'High' },
-                      { item: 'Buttons (Small)', qty: 1500, thresh: 1000, status: 'High' },
-                      { item: 'Zippers', qty: 250, thresh: 300, status: 'Low' },
-                    ].map((alert, index) => (
-                      <tr key={index} className={index % 2 === 0 ? 'bg-gray-50' : ''}>
-                        <td className="p-3">{alert.item}</td>
-                        <td className="p-3">{alert.qty}</td>
-                        <td className="p-3">{alert.thresh}</td>
-                        <td className="p-3">
-                          <span
-                            className={
-                              alert.status === 'Low' ? 'text-red-500' : 'text-green-500'
-                            }
-                          >
-                            {alert.status}
-                          </span>
+                    {lowInventoryItems.length > 0 ? (
+                      lowInventoryItems.map((item) => (
+                        <tr key={item.id} className="border-b hover:bg-gray-50 transition duration-200">
+                          <td className="p-3">{item.id}</td>
+                          <td className="p-3">{item.item}</td>
+                          <td className="p-3">{item.quantity}</td>
+                          <td className="p-3">{item.threshold}</td>
+                          <td className="p-3">
+                            <span className="text-red-500">Low</span>
+                          </td>
+                          <td className="p-3">{item.unit}</td>
+                          <td className="p-3">{new Date(item.lastUpdated).toLocaleDateString()}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="7" className="p-3 text-center text-gray-500">
+                          No low inventory items
                         </td>
                       </tr>
-                    ))}
+                    )}
                   </tbody>
                 </table>
               </div>

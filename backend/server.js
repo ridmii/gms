@@ -80,11 +80,13 @@ app.use('/uploads', express.static('uploads'));
 // Delivery Routes
 app.get('/api/deliveries', authenticateAdmin, async (req, res) => {
   try {
-    const deliveries = await Delivery.find().sort({ scheduledDate: -1 }).populate('orderId', 'name address');
+    const deliveries = await Delivery.find()
+      .sort({ completedAt: -1 }) // Sort by completion date
+      .populate('orderId', 'name address status');
     res.json(deliveries);
   } catch (err) {
     console.error('Error fetching deliveries:', err);
-    res.status(500).json({ error: 'Failed to fetch deliveries' });
+    res.status(500).json({ error: 'Failed to fetch deliveries', details: err.message });
   }
 });
 
@@ -94,29 +96,27 @@ app.get('/api/orders/unassigned', authenticateAdmin, async (req, res) => {
     res.json(orders);
   } catch (err) {
     console.error('Error fetching unassigned orders:', err);
-    res.status(500).json({ error: 'Failed to fetch unassigned orders' });
+    res.status(500).json({ error: 'Failed to fetch unassigned orders', details: err.message });
   }
 });
 
 app.post('/api/deliveries', authenticateAdmin, async (req, res) => {
   try {
-    const { orderId, customer, address, scheduledDate, assignedTo, status } = req.body;
-    if (!orderId || !customer || !address || !scheduledDate) {
-      return res.status(400).json({ error: 'Order ID, customer, address, and scheduled date are required' });
+    const { orderId, customer, address, assignedTo, status } = req.body;
+    if (!orderId || !customer || !address) {
+      return res.status(400).json({ error: 'Order ID, customer, and address are required' });
     }
-    const deliveryId = `DEL-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`; // Unique ID
+    const deliveryId = `DEL-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
     const delivery = new Delivery({
       deliveryId,
       orderId,
       customer,
       address,
-      scheduledDate,
       assignedTo: assignedTo || '',
-      status: status || 'Pending', // Default status
+      status: status || 'Pending',
     });
     const savedDelivery = await delivery.save();
-    // Update order status to 'In Progress' if delivery is created
-    await Order.findByIdAndUpdate(orderId, { status: 'In Progress' });
+    await Order.findByIdAndUpdate(orderId, { status: 'In Progress' }); // Initial status
     res.status(201).json(savedDelivery);
   } catch (err) {
     console.error('Error creating delivery:', err);
@@ -127,17 +127,24 @@ app.post('/api/deliveries', authenticateAdmin, async (req, res) => {
 app.put('/api/deliveries/:deliveryId/assign', authenticateAdmin, async (req, res) => {
   try {
     const { driverId, status } = req.body;
-    if (!driverId) return res.status(400).json({ error: 'Driver ID is required' });
+    if (!driverId && !status) return res.status(400).json({ error: 'Driver ID or status is required' });
     const delivery = await Delivery.findOneAndUpdate(
       { deliveryId: req.params.deliveryId },
-      { assignedTo: driverId, status: status || 'In Progress' },
+      {
+        assignedTo: driverId || '',
+        status: status || 'Pending',
+        completedAt: status === 'Delivered' ? new Date() : undefined,
+      },
       { new: true, runValidators: true }
     );
     if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
+    if (status === 'Delivered') {
+      await Order.findByIdAndUpdate(delivery.orderId, { status: 'Completed' }); // Sync with order
+    }
     res.json(delivery);
   } catch (err) {
     console.error('Error assigning driver:', err);
-    res.status(500).json({ error: 'Failed to assign driver' });
+    res.status(500).json({ error: 'Failed to assign driver', details: err.message });
   }
 });
 
@@ -152,7 +159,7 @@ app.put('/api/deliveries/:deliveryId/remove-driver', authenticateAdmin, async (r
     res.json(delivery);
   } catch (err) {
     console.error('Error removing driver:', err);
-    res.status(500).json({ error: 'Failed to remove driver' });
+    res.status(500).json({ error: 'Failed to remove driver', details: err.message });
   }
 });
 
@@ -163,7 +170,6 @@ app.delete('/api/deliveries/:deliveryId', authenticateAdmin, async (req, res) =>
     if (!deletedDelivery) {
       return res.status(404).json({ message: 'Delivery not found' });
     }
-    // Optionally revert order status to Pending if needed
     await Order.findByIdAndUpdate(deletedDelivery.orderId, { status: 'Pending' });
     res.json({ message: 'Delivery deleted successfully' });
   } catch (err) {
@@ -182,10 +188,10 @@ const initializeDeliveries = async () => {
         const delivery = new Delivery({
           deliveryId: `DEL-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
           orderId: order._id,
-          customer: order.name,
+          customer: order.name || 'Unknown Customer',
           address: order.address || 'Not provided',
-          scheduledDate: new Date(),
           assignedTo: '',
+          status: 'Pending',
         });
         await delivery.save();
         console.log(`Created delivery for order ${order._id}`);
@@ -735,13 +741,12 @@ app.get('/api/dashboard/stats', authenticateAdmin, async (req, res) => {
   try {
     const totalOrders = await Order.countDocuments();
     const pendingDeliveries = await Order.countDocuments({ status: 'Pending' });
-    const stockLevel = 85; // Placeholder
     const monthlyIncome = await Order.aggregate([
-      { $match: { date: { $gte: new Date(new Date().setDate(new Date().getDate() - 30)) } } },
-      { $group: { _id: null, total: { $sum: { $ifNull: ['$priceDetails.total', 0] } } } },
-    ]).then((result) => result[0]?.total || 0);
+  { $match: { date: { $gte: new Date(new Date().setDate(new Date().getDate() - 30)) } } },
+  { $group: { _id: null, total: { $sum: { $ifNull: ['$priceDetails.total', 0] } } } },
+]).then((result) => result[0]?.total || 0);
 
-    res.json({ totalOrders, pendingDeliveries, stockLevel, monthlyIncome });
+    res.json({ totalOrders, pendingDeliveries, monthlyIncome });
   } catch (err) {
     console.error('Error fetching dashboard stats:', err);
     res.status(500).json({ error: 'Failed to fetch dashboard stats' });

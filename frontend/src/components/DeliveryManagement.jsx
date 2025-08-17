@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { FiSearch, FiPlus, FiTruck, FiClock, FiCheck, FiLogOut, FiTrash2, FiX } from 'react-icons/fi';
+import React, { useEffect, useState } from 'react';
+import { FiSearch, FiPlus, FiTruck, FiCheck, FiLogOut, FiTrash2, FiX, FiClock } from 'react-icons/fi';
 import AdminSidebar from './AdminSidebar';
 import axios from 'axios';
 
@@ -11,31 +11,18 @@ const DeliveryManagement = () => {
   const [drivers, setDrivers] = useState(['Namal Perera', 'Geeth Kawshal', 'Samantha Pieris']);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('adminToken') || '');
+  const [token] = useState(localStorage.getItem('adminToken') || '');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deliveryToDelete, setDeliveryToDelete] = useState(null);
 
   useEffect(() => {
-    const loginAndFetch = async () => {
+    const fetchData = async () => {
       if (!token) {
-        try {
-          const loginRes = await axios.post('http://localhost:5000/api/admin/login', {
-            email: 'admin@dimalsha.com',
-            password: 'admin123',
-          }, {
-            headers: { 'Content-Type': 'application/json' },
-          });
-          const newToken = loginRes.data.token;
-          setToken(newToken);
-          localStorage.setItem('adminToken', newToken);
-          console.log('Login successful, token:', newToken);
-        } catch (err) {
-          setError('Failed to login: ' + (err.response?.data?.message || err.message));
-          console.error('Login error:', err);
-          setIsLoading(false);
-          return;
-        }
+        setError('No authentication token found. Please log in.');
+        setIsLoading(false);
+        return;
       }
+      setIsLoading(true);
       try {
         const [deliveriesRes, ordersRes] = await Promise.all([
           axios.get('http://localhost:5000/api/deliveries', {
@@ -47,31 +34,39 @@ const DeliveryManagement = () => {
         ]);
         setDeliveries(Array.isArray(deliveriesRes.data) ? deliveriesRes.data : []);
         setUnassignedOrders(Array.isArray(ordersRes.data) ? ordersRes.data.filter(order => order.status === 'Pending') : []);
+        setError(null);
       } catch (err) {
         setError('Failed to load data: ' + (err.response?.data?.message || err.message));
         console.error('Fetch error:', err);
-        setDeliveries([]); // Reset to empty array on error to avoid stale data
+        setDeliveries([]);
         setUnassignedOrders([]);
       } finally {
         setIsLoading(false);
       }
     };
-    loginAndFetch();
-  }, [token]); // Re-run on token change (e.g., login)
+    fetchData();
+  }, [token]);
 
   const assignDelivery = async (orderId) => {
     const order = unassignedOrders.find(o => o._id === orderId);
     if (!order) return;
 
-    const availableDrivers = drivers.filter(d => !deliveries.some(del => del.assignedTo === d));
-    const driver = availableDrivers.length > 0 ? availableDrivers[0] : drivers[0];
+    const busyDrivers = deliveries
+      .filter(d => ['In Progress', 'Delivered'].includes(d.status) && d.assignedTo)
+      .map(d => d.assignedTo);
+    const availableDrivers = drivers.filter(d => !busyDrivers.includes(d));
+    const driver = availableDrivers.length > 0 ? availableDrivers[0] : null;
+
+    if (!driver) {
+      setError('No drivers available. Please reassign existing deliveries.');
+      return;
+    }
 
     try {
       const deliveryData = {
-        orderId: order._id, // Use order._id directly
+        orderId: order._id,
         customer: order.name || 'Unknown Customer',
         address: order.address || 'Not provided',
-        scheduledDate: new Date().toISOString(),
         assignedTo: driver,
         status: 'Pending',
       };
@@ -95,16 +90,12 @@ const DeliveryManagement = () => {
       setDeliveries(prev => prev.map(d => (d.deliveryId === deliveryId ? response.data : d)));
       setError(null);
     } catch (err) {
-      setError('Failed to update delivery: ' + err.message);
+      setError('Failed to update delivery: ' + (err.response?.data?.message || err.message));
       console.error('Update error:', err);
     }
   };
 
   const deleteDelivery = async (deliveryId) => {
-    if (!deliveryId) {
-      setError('Invalid delivery ID for deletion');
-      return;
-    }
     try {
       const response = await axios.delete(`http://localhost:5000/api/deliveries/${deliveryId}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -112,6 +103,7 @@ const DeliveryManagement = () => {
       if (response.status === 200 || response.status === 204) {
         setDeliveries(prev => prev.filter(d => d.deliveryId !== deliveryId));
         setShowDeleteConfirm(false);
+        setDeliveryToDelete(null);
         setError(null);
       } else {
         setError('Unexpected response from server');
@@ -122,12 +114,12 @@ const DeliveryManagement = () => {
     }
   };
 
-  const handleStatusChange = (id, newStatus) => {
-    updateDelivery(id, { driverId: deliveries.find(d => d.deliveryId === id)?.assignedTo, status: newStatus });
+  const handleStatusChange = (deliveryId, newStatus) => {
+    updateDelivery(deliveryId, { status: newStatus });
   };
 
-  const handleDriverChange = (id, newDriver) => {
-    updateDelivery(id, { driverId: newDriver });
+  const handleDriverChange = (deliveryId, newDriver) => {
+    updateDelivery(deliveryId, { assignedTo: newDriver });
   };
 
   const confirmDelete = (deliveryId) => {
@@ -138,6 +130,15 @@ const DeliveryManagement = () => {
   const cancelDelete = () => {
     setShowDeleteConfirm(false);
     setDeliveryToDelete(null);
+  };
+
+  const getShortId = (id) => {
+    try {
+      return id ? (typeof id === 'string' ? id.slice(-8) : id.toString().slice(-8)) : 'N/A';
+    } catch (e) {
+      console.error('Error parsing ID:', e);
+      return 'N/A';
+    }
   };
 
   const getStatusBadge = (status) => {
@@ -152,14 +153,6 @@ const DeliveryManagement = () => {
     }
   };
 
-  const getShortId = (id) => {
-    try {
-      return id ? (typeof id === 'string' ? id.slice(-8) : id.toString().slice(-8)) : 'N/A';
-    } catch (e) {
-      return id ? id.toString() : 'N/A';
-    }
-  };
-
   const filteredDeliveries = deliveries.filter((d) => {
     const customer = d.customer || '';
     const deliveryId = d.deliveryId || '';
@@ -167,11 +160,11 @@ const DeliveryManagement = () => {
                   deliveryId.toLowerCase().includes(searchTerm.toLowerCase());
     if (timeFilter === 'all') return match;
     const now = new Date();
-    const scheduled = d.scheduledDate ? new Date(d.scheduledDate) : now;
+    const completed = d.completedAt ? new Date(d.completedAt) : null;
     const cutoff = new Date(now);
     if (timeFilter === '7days') cutoff.setDate(now.getDate() - 7);
     else if (timeFilter === '30days') cutoff.setDate(now.getDate() - 30);
-    return match && !isNaN(scheduled.getTime()) && scheduled >= cutoff;
+    return match && completed && !isNaN(completed.getTime()) && completed >= cutoff;
   });
 
   return (
@@ -198,7 +191,6 @@ const DeliveryManagement = () => {
           <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6">
             <div className="relative w-full md:w-1/3">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                <FiSearch />
               </span>
               <input
                 type="text"
@@ -241,8 +233,8 @@ const DeliveryManagement = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {unassignedOrders.map((order, index) => (
-                      <tr key={order._id || `order-${index}`} className="hover:bg-gray-50 transition-all duration-200">
+                    {unassignedOrders.map((order) => (
+                      <tr key={order._id} className="hover:bg-gray-50 transition-all duration-200">
                         <td className="px-6 py-4 font-medium">{getShortId(order._id)}</td>
                         <td className="px-6 py-4">{order.name || 'Unknown Customer'}</td>
                         <td className="px-6 py-4">{order.address || 'Not provided'}</td>
@@ -250,7 +242,7 @@ const DeliveryManagement = () => {
                           <button
                             onClick={() => assignDelivery(order._id)}
                             className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 transition-all duration-200"
-                            disabled={!order._id || unassignedOrders.length === 0}
+                            disabled={!order._id}
                           >
                             Assign
                           </button>
@@ -271,20 +263,18 @@ const DeliveryManagement = () => {
                 <thead className="bg-gray-100 text-gray-700">
                   <tr>
                     <th className="px-6 py-3 text-left font-semibold">Delivery ID</th>
-                    <th className="px-6 py-3 text-left font-semibold">Order ID</th>
                     <th className="px-6 py-3 text-left font-semibold">Customer</th>
                     <th className="px-6 py-3 text-left font-semibold">Address</th>
                     <th className="px-6 py-3 text-left font-semibold">Assigned To</th>
-                    <th className="px-6 py-3 text-left font-semibold">Scheduled Date</th>
+                    <th className="px-6 py-3 text-left font-semibold">Completed At</th>
                     <th className="px-6 py-3 text-left font-semibold">Status</th>
                     <th className="px-6 py-3 text-left font-semibold">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {filteredDeliveries.map((delivery, index) => (
-                    <tr key={delivery.deliveryId || `delivery-${index}`} className="hover:bg-gray-50 transition-all duration-200">
+                  {filteredDeliveries.map((delivery) => (
+                    <tr key={delivery.deliveryId} className="hover:bg-gray-50 transition-all duration-200">
                       <td className="px-6 py-4 font-medium">{delivery.deliveryId || 'N/A'}</td>
-                      <td className="px-6 py-4">{getShortId(delivery.orderId)}</td>
                       <td className="px-6 py-4">{delivery.customer || 'Unknown Customer'}</td>
                       <td className="px-6 py-4">{delivery.address || 'Not provided'}</td>
                       <td className="px-6 py-4">
@@ -303,7 +293,7 @@ const DeliveryManagement = () => {
                         </select>
                       </td>
                       <td className="px-6 py-4">
-                        {delivery.scheduledDate ? new Date(delivery.scheduledDate).toLocaleDateString() : 'N/A'}
+                        {delivery.completedAt ? new Date(delivery.completedAt).toLocaleString() : 'N/A'}
                       </td>
                       <td className="px-6 py-4">
                         <select

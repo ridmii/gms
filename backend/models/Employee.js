@@ -6,7 +6,12 @@ const employeeSchema = new mongoose.Schema({
   role: { type: String, default: 'Staff' },
   department: { type: String, default: 'General' },
   baseSalary: { type: Number, required: true },
-  present: { type: Boolean, default: false },
+  attendance: {
+    date: { type: Date, default: Date.now },
+    inTime: { type: String }, // e.g., "09:00"
+    outTime: { type: String }, // e.g., "17:00"
+    hoursWorked: { type: Number, default: 0 }
+  },
   createdAt: { type: Date, default: Date.now },
 });
 

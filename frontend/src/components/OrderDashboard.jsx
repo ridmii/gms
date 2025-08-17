@@ -48,33 +48,36 @@ const OrderDashboard = () => {
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const token = localStorage.getItem('adminToken');
-    if (!token) {
-      navigate('/admin/login');
-      return;
-    }
+useEffect(() => {
+  const token = localStorage.getItem('adminToken');
+  if (!token) {
+    navigate('/admin/login');
+    return;
+  }
 
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const ordersResponse = await axios.get('http://localhost:5000/api/orders/admin', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setOrders(ordersResponse.data || []);
-        setFilteredOrders(ordersResponse.data || []);
-        setError(null);
-      } catch (err) {
-        console.error('Fetch error:', err);
-        setError('Failed to fetch orders. Please log in again.');
-        localStorage.removeItem('adminToken');
-        navigate('/admin/login');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [navigate]);
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const ordersResponse = await axios.get('http://localhost:5000/api/orders/admin', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setOrders(ordersResponse.data || []);
+      setFilteredOrders(ordersResponse.data || []);
+      setError(null);
+    } catch (err) {
+      console.error('Fetch error:', err);
+      setError('Failed to fetch orders. Please log in again.');
+      localStorage.removeItem('adminToken');
+      navigate('/admin/login');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  fetchData();
+  const interval = setInterval(fetchData, 5000); // Poll every 5 seconds
+  return () => clearInterval(interval); // Cleanup on unmount
+}, [navigate]);
 
   useEffect(() => {
     let filtered = orders || [];
@@ -316,7 +319,6 @@ const OrderDashboard = () => {
               {/* Search */}
               <div className="relative w-full md:w-1/2">
                 <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
-                  <FiSearch />
                 </span>
                 <input
                   type="text"
@@ -359,7 +361,6 @@ const OrderDashboard = () => {
                       <th className="px-4 py-3 font-semibold">Product</th>
                       <th className="px-4 py-3 font-semibold">Quantity</th>
                       <th className="px-4 py-3 font-semibold">Date</th>
-                      <th className="px-4 py-3 font-semibold">Status</th>
                       <th className="px-4 py-3 font-semibold">Actions</th>
                     </tr>
                   </thead>
@@ -373,18 +374,6 @@ const OrderDashboard = () => {
                         <td className="px-4 py-3">{order.material || 'N/A'}</td>
                         <td className="px-4 py-3">{order.quantity || 'N/A'}</td>
                         <td className="px-4 py-3">{new Date(order.date).toLocaleDateString()}</td>
-                        <td className="px-4 py-3">
-                          <select
-                            value={order.status || 'Pending'}
-                            onChange={(e) => handleStatusChange(order._id, e.target.value)}
-                            className="p-1 border border-gray-300 rounded-md text-sm transition bg-white"
-                          >
-                            <option value="Pending">Pending</option>
-                            <option value="In Progress">In Progress</option>
-                            <option value="Completed">Completed</option>
-                            <option value="Cancelled">Cancelled</option>
-                          </select>
-                        </td>
                         <td className="px-4 py-3 flex gap-2">
                           <button
                             onClick={() => handleDownload(order._id)}
