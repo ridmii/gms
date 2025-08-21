@@ -4,7 +4,7 @@ import AdminSidebar from './AdminSidebar';
 import axios from 'axios';
 
 const SalaryFinanceManagement = () => {
-  const [employees, setEmployees] = useState([]);
+  const [salaries, setSalaries] = useState([]);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ id: '', name: '', role: '', amount: '', paymentDate: '', paid: false });
   const [search, setSearch] = useState('');
@@ -16,9 +16,10 @@ const SalaryFinanceManagement = () => {
         const res = await axios.get('http://localhost:5000/api/salaries', {
           headers: { Authorization: `Bearer ${token}` },
         });
-        setEmployees(res.data);
+        console.log('Fetched salaries:', res.data); // Debug fetch
+        setSalaries(res.data);
       } catch (err) {
-        console.error('Error fetching salaries:', err);
+        console.error('Error fetching salaries:', err.response?.data || err.message); // Log error details
       }
     };
     if (token) fetchSalaries();
@@ -29,15 +30,15 @@ const SalaryFinanceManagement = () => {
       const res = await axios.put(`http://localhost:5000/api/salaries/${id}/mark-paid`, {}, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setEmployees((prev) => prev.map((emp) => emp.id === id ? res.data : emp));
+      setSalaries((prev) => prev.map((sal) => sal.id === id ? res.data : sal));
     } catch (err) {
-      console.error('Error marking as paid:', err);
+      console.error('Error marking as paid:', err.response?.data || err.message);
     }
   };
 
-  const handleEdit = (emp) => {
-    setForm(emp);
-    setEditing(emp.id);
+  const handleEdit = (sal) => {
+    setForm(sal);
+    setEditing(sal.id);
   };
 
   const handleDelete = async (id) => {
@@ -45,9 +46,9 @@ const SalaryFinanceManagement = () => {
       await axios.delete(`http://localhost:5000/api/salaries/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setEmployees((prev) => prev.filter((emp) => emp.id !== id));
+      setSalaries((prev) => prev.filter((sal) => sal.id !== id));
     } catch (err) {
-      console.error('Error deleting salary:', err);
+      console.error('Error deleting salary:', err.response?.data || err.message);
     }
   };
 
@@ -55,29 +56,32 @@ const SalaryFinanceManagement = () => {
     try {
       const payload = {
         ...form,
-        amount: form.amount.replace('LKR ', ''), // Clean amount for backend
-        paymentDate: form.paymentDate,
-        paid: form.paid,
+        amount: form.amount.replace('LKR ', ''), // Clean amount
+        paymentDate: form.paymentDate || new Date().toISOString().split('T')[0],
+        paid: form.paid || false,
       };
+      if (!payload.id) {
+        payload.id = `SAL_${Date.now()}`; // Generate unique ID if not provided
+      }
       if (editing) {
         const res = await axios.put(`http://localhost:5000/api/salaries/${form.id}`, payload, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        setEmployees((prev) => prev.map((emp) => emp.id === editing ? res.data : emp));
+        setSalaries((prev) => prev.map((sal) => sal.id === editing ? res.data : sal));
       } else {
         const res = await axios.post('http://localhost:5000/api/salaries', payload, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        setEmployees((prev) => [...prev, res.data]);
+        setSalaries((prev) => [...prev, res.data]);
       }
       setForm({ id: '', name: '', role: '', amount: '', paymentDate: '', paid: false });
       setEditing(null);
     } catch (err) {
-      console.error('Error saving salary:', err);
+      console.error('Error saving salary:', err.response?.data || err.message);
     }
   };
 
-  const filtered = employees.filter((e) =>
+  const filtered = salaries.filter((e) =>
     e.name.toLowerCase().includes(search.toLowerCase()) ||
     e.id.toLowerCase().includes(search.toLowerCase())
   );
@@ -133,28 +137,28 @@ const SalaryFinanceManagement = () => {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((emp) => (
-                <tr key={emp.id} className="border-t hover:bg-gray-50">
-                  <td className="px-4 py-2">{emp.id}</td>
-                  <td className="px-4 py-2">{emp.name}</td>
-                  <td className="px-4 py-2">{emp.role}</td>
-                  <td className="px-4 py-2">{emp.amount}</td>
-                  <td className="px-4 py-2">{new Date(emp.paymentDate).toLocaleDateString()}</td>
+              {filtered.map((sal) => (
+                <tr key={sal.id} className="border-t hover:bg-gray-50">
+                  <td className="px-4 py-2">{sal.id}</td>
+                  <td className="px-4 py-2">{sal.name}</td>
+                  <td className="px-4 py-2">{sal.role}</td>
+                  <td className="px-4 py-2">{`LKR ${sal.amount}`}</td>
+                  <td className="px-4 py-2">{new Date(sal.paymentDate).toLocaleDateString()}</td>
                   <td className="px-4 py-2">
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${emp.paid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                      {emp.paid ? 'Paid' : 'Unpaid'}
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${sal.paid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                      {sal.paid ? 'Paid' : 'Unpaid'}
                     </span>
                   </td>
                   <td className="px-4 py-2 flex gap-2 items-center">
-                    {!emp.paid && (
-                      <button onClick={() => handleMarkPaid(emp.id)} className="text-green-600 hover:text-green-800 text-sm">
+                    {!sal.paid && (
+                      <button onClick={() => handleMarkPaid(sal.id)} className="text-green-600 hover:text-green-800 text-sm">
                         <FiCheckCircle className="inline" /> Mark as Paid
                       </button>
                     )}
-                    <button onClick={() => handleEdit(emp)} className="text-blue-600 hover:text-blue-800">
+                    <button onClick={() => handleEdit(sal)} className="text-blue-600 hover:text-blue-800">
                       <FiEdit />
                     </button>
-                    <button onClick={() => handleDelete(emp.id)} className="text-red-600 hover:text-red-800">
+                    <button onClick={() => handleDelete(sal.id)} className="text-red-600 hover:text-red-800">
                       <FiTrash2 />
                     </button>
                   </td>
@@ -162,7 +166,7 @@ const SalaryFinanceManagement = () => {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td className="px-4 py-4 text-center text-gray-400" colSpan="7">No employees found.</td>
+                  <td className="px-4 py-4 text-center text-gray-400" colSpan="7">No payments found.</td>
                 </tr>
               )}
             </tbody>
