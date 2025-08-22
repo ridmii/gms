@@ -450,6 +450,16 @@ app.put('/api/salaries/:id/mark-paid', authenticateAdmin, async (req, res) => {
   }
 });
 
+//Employee Routes
+app.get('/api/employees', async (req, res) => {
+  try {
+    const employees = await Employee.find();
+    res.json(employees);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching employees' });
+  }
+});
+
 // Inventory Routes
 app.get('/api/inventory', authenticateAdmin, async (req, res) => {
   try {
