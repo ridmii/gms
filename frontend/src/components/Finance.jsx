@@ -6,12 +6,16 @@ import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
 const SalaryFinanceManagement = () => {
+<<<<<<< HEAD
   const TOTAL_EMPLOYEES = 15;
   const [employees, setEmployees] = useState([]);
   const [salaries, setSalaries] = useState([]);
   const [monthlyIncome, setMonthlyIncome] = useState(0);
   const [totalSalaryExpense, setTotalSalaryExpense] = useState(0);
   const [remainingAmount, setRemainingAmount] = useState(0);
+=======
+  const [salaries, setSalaries] = useState([]);
+>>>>>>> 7b641f12f7776b0c9f08aa709049cf1d2f20b1ec
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ id: '', name: '', role: '', amount: '', paymentDate: '', paid: false });
   const [search, setSearch] = useState('');
@@ -24,6 +28,7 @@ const SalaryFinanceManagement = () => {
 
     const fetchData = async () => {
       try {
+<<<<<<< HEAD
         const [statsRes, employeesRes, salariesRes] = await Promise.all([
           axios.get('http://localhost:5000/api/dashboard/stats', {
             headers: { Authorization: `Bearer ${token}` },
@@ -89,6 +94,15 @@ const SalaryFinanceManagement = () => {
         setRemainingAmount(statsRes.data.monthlyIncome - expense);
       } catch (err) {
         console.error('Error fetching data:', err);
+=======
+        const res = await axios.get('http://localhost:5000/api/salaries', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        console.log('Fetched salaries:', res.data); // Debug fetch
+        setSalaries(res.data);
+      } catch (err) {
+        console.error('Error fetching salaries:', err.response?.data || err.message); // Log error details
+>>>>>>> 7b641f12f7776b0c9f08aa709049cf1d2f20b1ec
       }
     };
     fetchData();
@@ -138,13 +152,13 @@ const SalaryFinanceManagement = () => {
       });
       setSalaries((prev) => prev.map((sal) => sal.id === id ? res.data : sal));
     } catch (err) {
-      console.error('Error marking as paid:', err);
+      console.error('Error marking as paid:', err.response?.data || err.message);
     }
   };
 
-  const handleEdit = (emp) => {
-    setForm(emp);
-    setEditing(emp.id);
+  const handleEdit = (sal) => {
+    setForm(sal);
+    setEditing(sal.id);
   };
 
   const handleDelete = async (id) => {
@@ -154,7 +168,7 @@ const SalaryFinanceManagement = () => {
       });
       setSalaries((prev) => prev.filter((sal) => sal.id !== id));
     } catch (err) {
-      console.error('Error deleting salary:', err);
+      console.error('Error deleting salary:', err.response?.data || err.message);
     }
   };
 
@@ -162,10 +176,19 @@ const SalaryFinanceManagement = () => {
     try {
       const payload = {
         ...form,
+<<<<<<< HEAD
         amount: form.amount.replace('LKR ', ''),
         paymentDate: new Date(selectedMonth + '-30').toISOString(), // Fixed to 30th
         paid: form.paid,
+=======
+        amount: form.amount.replace('LKR ', ''), // Clean amount
+        paymentDate: form.paymentDate || new Date().toISOString().split('T')[0],
+        paid: form.paid || false,
+>>>>>>> 7b641f12f7776b0c9f08aa709049cf1d2f20b1ec
       };
+      if (!payload.id) {
+        payload.id = `SAL_${Date.now()}`; // Generate unique ID if not provided
+      }
       if (editing) {
         const res = await axios.put(`http://localhost:5000/api/salaries/${form.id}`, payload, {
           headers: { Authorization: `Bearer ${token}` },
@@ -180,10 +203,11 @@ const SalaryFinanceManagement = () => {
       setForm({ id: '', name: '', role: '', amount: '', paymentDate: '', paid: false });
       setEditing(null);
     } catch (err) {
-      console.error('Error saving salary:', err);
+      console.error('Error saving salary:', err.response?.data || err.message);
     }
   };
 
+<<<<<<< HEAD
   const generateReport = () => {
     const filteredSalaries = selectedMonth ? salaries.filter(sal => 
       new Date(sal.paymentDate).toISOString().slice(0, 7) === selectedMonth
@@ -220,6 +244,12 @@ const SalaryFinanceManagement = () => {
     const bId = b.emp_id || b.id || '';
     return aId.localeCompare(bId);
   });
+=======
+  const filtered = salaries.filter((e) =>
+    e.name.toLowerCase().includes(search.toLowerCase()) ||
+    e.id.toLowerCase().includes(search.toLowerCase())
+  );
+>>>>>>> 7b641f12f7776b0c9f08aa709049cf1d2f20b1ec
 
   return (
     <div className="min-h-screen flex bg-gray-50">
@@ -281,6 +311,7 @@ const SalaryFinanceManagement = () => {
               </tr>
             </thead>
             <tbody>
+<<<<<<< HEAD
               {filtered.map((emp) => (
                 <tr key={emp.id} className="border-t hover:bg-gray-50">
                   <td className="px-4 py-2">{emp.emp_id || emp.id}</td>
@@ -288,21 +319,30 @@ const SalaryFinanceManagement = () => {
                   <td className="px-4 py-2">{emp.role}</td>
                   <td className="px-4 py-2">{emp.amount}</td>
                   <td className="px-4 py-2">{new Date(emp.paymentDate).toLocaleDateString()}</td>
+=======
+              {filtered.map((sal) => (
+                <tr key={sal.id} className="border-t hover:bg-gray-50">
+                  <td className="px-4 py-2">{sal.id}</td>
+                  <td className="px-4 py-2">{sal.name}</td>
+                  <td className="px-4 py-2">{sal.role}</td>
+                  <td className="px-4 py-2">{`LKR ${sal.amount}`}</td>
+                  <td className="px-4 py-2">{new Date(sal.paymentDate).toLocaleDateString()}</td>
+>>>>>>> 7b641f12f7776b0c9f08aa709049cf1d2f20b1ec
                   <td className="px-4 py-2">
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${emp.paid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                      {emp.paid ? 'Paid' : 'Unpaid'}
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${sal.paid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                      {sal.paid ? 'Paid' : 'Unpaid'}
                     </span>
                   </td>
                   <td className="px-4 py-2 flex gap-2 items-center">
-                    {!emp.paid && (
-                      <button onClick={() => handleMarkPaid(emp.id)} className="text-green-600 hover:text-green-800 text-sm">
+                    {!sal.paid && (
+                      <button onClick={() => handleMarkPaid(sal.id)} className="text-green-600 hover:text-green-800 text-sm">
                         <FiCheckCircle className="inline" /> Mark as Paid
                       </button>
                     )}
-                    <button onClick={() => handleEdit(emp)} className="text-blue-600 hover:text-blue-800">
+                    <button onClick={() => handleEdit(sal)} className="text-blue-600 hover:text-blue-800">
                       <FiEdit />
                     </button>
-                    <button onClick={() => handleDelete(emp.id)} className="text-red-600 hover:text-red-800">
+                    <button onClick={() => handleDelete(sal.id)} className="text-red-600 hover:text-red-800">
                       <FiTrash2 />
                     </button>
                   </td>
@@ -310,7 +350,11 @@ const SalaryFinanceManagement = () => {
               ))}
               {filtered.length === 0 && (
                 <tr>
+<<<<<<< HEAD
                   <td className="px-4 py-4 text-center text-gray-400" colSpan="7">No payments found for {selectedMonth ? new Date(selectedMonth).toLocaleString('default', { month: 'long', year: 'numeric' }) : 'all months'}.</td>
+=======
+                  <td className="px-4 py-4 text-center text-gray-400" colSpan="7">No payments found.</td>
+>>>>>>> 7b641f12f7776b0c9f08aa709049cf1d2f20b1ec
                 </tr>
               )}
             </tbody>

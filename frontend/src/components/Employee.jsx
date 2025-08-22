@@ -16,7 +16,6 @@ const Employee = () => {
   const [editingId, setEditingId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [error, setError] = useState(null);
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState(null);
 
   useEffect(() => {
     fetchEmployees();
@@ -25,6 +24,7 @@ const Employee = () => {
   const fetchEmployees = async () => {
     try {
       const response = await axios.get('http://localhost:5000/api/employees');
+      console.log('Fetched employees:', response.data); // Debug initial fetch
       setEmployees(response.data);
       setError(null);
     } catch (err) {
@@ -51,7 +51,6 @@ const Employee = () => {
         attendance: { date: new Date().toISOString().split('T')[0], inTime: '', outTime: '', hoursWorked: 0 }
       });
       setEditingId(null);
-      setSelectedEmployeeId(null);
       setError(null);
     } catch (err) {
       setError('Failed to save employee. Check server or input data.');
@@ -69,7 +68,6 @@ const Employee = () => {
       attendance: emp.attendance || { date: new Date().toISOString().split('T')[0], inTime: '', outTime: '', hoursWorked: 0 }
     });
     setEditingId(emp._id);
-    setSelectedEmployeeId(emp._id);
   };
 
   const handleDelete = async (id) => {
@@ -83,35 +81,50 @@ const Employee = () => {
     }
   };
 
-  const updateAttendance = async (id) => {
+  const updateAttendance = async (id, action) => {
+    console.log('Updating attendance for ID:', id, 'Action:', action);
     const employee = employees.find(e => e._id === id);
-    if (!employee || !form.attendance.inTime || !form.attendance.outTime) return;
-
-    const inTime = new Date(`2000-01-01 ${form.attendance.inTime}`);
-    const outTime = new Date(`2000-01-01 ${form.attendance.outTime}`);
-    if (isNaN(inTime) || isNaN(outTime) || outTime <= inTime) {
-      setError('Invalid in/out times. Ensure out time is after in time.');
+    if (!employee) {
+      console.error('Employee not found:', id);
       return;
     }
 
-    const diffMs = outTime - inTime;
-    const hoursWorked = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100; // Hours with 2 decimal places
+    const now = new Date();
+    const currentTime = now.toTimeString().slice(0, 8); // HH:MM:SS format
+    const currentDate = now.toISOString().split('T')[0];
+
+    let newAttendance = { ...employee.attendance || { date: currentDate, inTime: '', outTime: '', hoursWorked: 0 } };
+    if (action === 'in') {
+      newAttendance.inTime = currentTime;
+    } else if (action === 'out') {
+      newAttendance.outTime = currentTime;
+    }
+
+    if (newAttendance.inTime && newAttendance.outTime) {
+      const inTime = new Date(`2000-01-01 ${newAttendance.inTime}`);
+      const outTime = new Date(`2000-01-01 ${newAttendance.outTime}`);
+      if (!isNaN(inTime) && !isNaN(outTime) && outTime > inTime) {
+        const diffMs = outTime - inTime;
+        newAttendance.hoursWorked = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
+      }
+    }
 
     try {
-      await axios.put(`http://localhost:5000/api/employees/${id}`, {
-        ...employee,
-        attendance: { 
-          date: form.attendance.date, 
-          inTime: form.attendance.inTime, 
-          outTime: form.attendance.outTime, 
-          hoursWorked 
-        }
+      console.log('Sending update with payload:', { attendance: newAttendance });
+      const response = await axios.put(`http://localhost:5000/api/employees/${id}`, {
+        attendance: newAttendance,
       });
-      fetchEmployees();
+      console.log('Update response:', response.data); // Log full response
+      // Update state with the full updated employee
+      setEmployees(prevEmployees => 
+        prevEmployees.map(emp => 
+          emp._id === id ? response.data : emp
+        )
+      );
       setError(null);
     } catch (err) {
       setError('Failed to update attendance.');
-      console.error('Error updating attendance:', err);
+      console.error('Error updating attendance:', err.response?.data || err.message);
     }
   };
 
@@ -222,54 +235,28 @@ const Employee = () => {
                   <td className="px-4 py-2">{emp.department}</td>
                   <td className="px-4 py-2">Rs. {emp.baseSalary || 0}</td>
                   <td className="px-4 py-2">
-                    {selectedEmployeeId === emp._id ? (
-                      <div className="flex flex-col gap-2">
-                        <input
-                          type="date"
-                          value={form.attendance.date}
-                          onChange={(e) => setForm({ ...form, attendance: { ...form.attendance, date: e.target.value } })}
-                          className="px-2 py-1 border rounded"
-                        />
-                        <input
-                          type="time"
-                          value={form.attendance.inTime}
-                          onChange={(e) => setForm({ ...form, attendance: { ...form.attendance, inTime: e.target.value } })}
-                          className="px-2 py-1 border rounded"
-                        />
-                        <input
-                          type="time"
-                          value={form.attendance.outTime}
-                          onChange={(e) => setForm({ ...form, attendance: { ...form.attendance, outTime: e.target.value } })}
-                          className="px-2 py-1 border rounded"
-                        />
+                    <div>
+                      <p>Date: {new Date(emp.attendance?.date || new Date().toISOString().split('T')[0]).toLocaleDateString()}</p>
+                      <p>In: {emp.attendance?.inTime || 'Not Recorded'}</p>
+                      <p>Out: {emp.attendance?.outTime || 'Not Recorded'}</p>
+                      <p>Hours: {emp.attendance?.hoursWorked || 0} hrs</p>
+                      <div className="flex gap-2 mt-2">
                         <button
-                          onClick={() => updateAttendance(emp._id)}
-                          className="bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition"
+                          onClick={() => updateAttendance(emp._id, 'in')}
+                          className="bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 transition"
+                          disabled={emp.attendance?.inTime && !emp.attendance?.outTime}
                         >
-                          Save
+                          In
+                        </button>
+                        <button
+                          onClick={() => updateAttendance(emp._id, 'out')}
+                          className="bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition"
+                          disabled={!emp.attendance?.inTime || emp.attendance?.outTime}
+                        >
+                          Out
                         </button>
                       </div>
-                    ) : (
-                      <div>
-                        {emp.attendance ? (
-                          <div>
-                            <p>Date: {new Date(emp.attendance.date).toLocaleDateString()}</p>
-                            <p>In: {emp.attendance.inTime || 'N/A'}</p>
-                            <p>Out: {emp.attendance.outTime || 'N/A'}</p>
-                            <p>Hours: {emp.attendance.hoursWorked || 0} hrs</p>
-                          </div>
-                        ) : 'No attendance recorded'}
-                        <button
-                          onClick={() => {
-                            setSelectedEmployeeId(emp._id);
-                            setForm({ ...form, attendance: emp.attendance || { date: new Date().toISOString().split('T')[0], inTime: '', outTime: '', hoursWorked: 0 } });
-                          }}
-                          className="mt-2 bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 transition"
-                        >
-                          <FiClock /> Edit Attendance
-                        </button>
-                      </div>
-                    )}
+                    </div>
                   </td>
                   <td className="px-4 py-2 flex gap-2">
                     <button
