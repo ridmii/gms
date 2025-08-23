@@ -147,7 +147,7 @@ const AdminDashboard = () => {
           <>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
               <div className="bg-white p-4 rounded-lg shadow hover:shadow-lg transition duration-300">
-                <h3 className="text-sm text-gray-500">Total Orders</h3>
+                <h3 className="text-sm text-gray-500">Total Monthly Orders</h3>
                 <p className="text-2xl font-semibold text-gray-800">
                   {dashboardStats.totalOrders}
                 </p>

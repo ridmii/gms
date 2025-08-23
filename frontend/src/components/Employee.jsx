@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { FiPlus, FiEdit, FiTrash2, FiLogOut, FiClock } from 'react-icons/fi';
+import { FiPlus, FiEdit, FiTrash2, FiLogOut, FiClock, FiDownload } from 'react-icons/fi';
 import AdminSidebar from './AdminSidebar';
 import axios from 'axios';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 
 const Employee = () => {
   const [employees, setEmployees] = useState([]);
@@ -24,7 +26,7 @@ const Employee = () => {
   const fetchEmployees = async () => {
     try {
       const response = await axios.get('http://localhost:5000/api/employees');
-      console.log('Fetched employees:', response.data); // Debug initial fetch
+      console.log('Fetched employees:', response.data);
       setEmployees(response.data);
       setError(null);
     } catch (err) {
@@ -82,7 +84,6 @@ const Employee = () => {
   };
 
   const updateAttendance = async (id, action) => {
-    console.log('Updating attendance for ID:', id, 'Action:', action);
     const employee = employees.find(e => e._id === id);
     if (!employee) {
       console.error('Employee not found:', id);
@@ -90,7 +91,7 @@ const Employee = () => {
     }
 
     const now = new Date();
-    const currentTime = now.toTimeString().slice(0, 8); // HH:MM:SS format
+    const currentTime = now.toTimeString().slice(0, 8); // HH:MM:SS
     const currentDate = now.toISOString().split('T')[0];
 
     let newAttendance = { ...employee.attendance || { date: currentDate, inTime: '', outTime: '', hoursWorked: 0 } };
@@ -100,31 +101,51 @@ const Employee = () => {
       newAttendance.outTime = currentTime;
     }
 
-    if (newAttendance.inTime && newAttendance.outTime) {
-      const inTime = new Date(`2000-01-01 ${newAttendance.inTime}`);
-      const outTime = new Date(`2000-01-01 ${newAttendance.outTime}`);
-      if (!isNaN(inTime) && !isNaN(outTime) && outTime > inTime) {
-        const diffMs = outTime - inTime;
-        newAttendance.hoursWorked = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
-      }
-    }
-
     try {
-      console.log('Sending update with payload:', { attendance: newAttendance });
       const response = await axios.put(`http://localhost:5000/api/employees/${id}`, {
         attendance: newAttendance,
       });
-      console.log('Update response:', response.data); // Log full response
-      // Update state with the full updated employee
-      setEmployees(prevEmployees => 
-        prevEmployees.map(emp => 
-          emp._id === id ? response.data : emp
-        )
+      console.log('Attendance updated:', response.data);
+      setEmployees(prevEmployees =>
+        prevEmployees.map(emp => emp._id === id ? response.data : emp)
       );
       setError(null);
     } catch (err) {
       setError('Failed to update attendance.');
       console.error('Error updating attendance:', err.response?.data || err.message);
+    }
+  };
+
+  const generateReport = async () => {
+    try {
+      const response = await axios.get('http://localhost:5000/api/employees');
+      const employeesData = response.data;
+
+      const reportData = employeesData.map((emp) => {
+        const attendance = emp.attendance || { hoursWorked: 0, inTime: '', outTime: '' };
+        const hourlyRate = emp.baseSalary / 160; // Assuming 160 hours/month
+        const totalEarned = (attendance.hoursWorked || 0) * hourlyRate;
+
+        return {
+          Name: emp.name,
+          'Base Salary': `Rs. ${emp.baseSalary || 0}`,
+          'In Time': attendance.inTime || 'Not Recorded',
+          'Out Time': attendance.outTime || 'Not Recorded',
+          'Hours Worked': `${attendance.hoursWorked || 0} hrs`,
+          'Hourly Rate': `Rs. ${Math.round(hourlyRate)}/hr`,
+          'Total Earned': `Rs. ${Math.round(totalEarned)}`,
+        };
+      });
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(reportData);
+      XLSX.utils.book_append_sheet(wb, ws, 'Employee Attendance Report');
+      const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const data = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      saveAs(data, `employee-attendance-report-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (err) {
+      setError('Failed to generate report.');
+      console.error('Error generating report:', err);
     }
   };
 
@@ -137,7 +158,6 @@ const Employee = () => {
       <AdminSidebar activePage="employees" />
 
       <main className="ml-64 w-full p-6">
-        {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-800">Employee Management</h1>
@@ -155,7 +175,6 @@ const Employee = () => {
           </div>
         </div>
 
-        {/* Search + Add */}
         <div className="mb-4 flex flex-col md:flex-row items-center justify-between gap-4">
           <input
             type="text"
@@ -208,10 +227,16 @@ const Employee = () => {
               <FiPlus />
               {editingId ? 'Update' : 'Add'}
             </button>
+            <button
+              onClick={generateReport}
+              className="bg-green-600 text-white px-3 py-1 rounded flex items-center gap-1 hover:bg-green-700 transition"
+            >
+              <FiDownload />
+              Generate Report
+            </button>
           </div>
         </div>
 
-        {/* Employee Table */}
         <div className="overflow-x-auto bg-white rounded-lg shadow">
           {error && <div className="text-red-500 mb-4">{error}</div>}
           <table className="min-w-full text-sm text-left">

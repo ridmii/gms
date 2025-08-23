@@ -1,6 +1,6 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const Employee = require('../models/Employee');
+import Employee from '../models/Employee.js';
 
 // Get all employees
 router.get('/employees', async (req, res) => {
@@ -28,7 +28,7 @@ router.post('/employees', async (req, res) => {
       attendance: { date: new Date(), inTime: '', outTime: '', hoursWorked: 0 }
     };
     const employee = await Employee.findOneAndUpdate(
-      { name }, // Consider using a unique field like email instead of name
+      { name },
       employeeData,
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
@@ -38,7 +38,7 @@ router.post('/employees', async (req, res) => {
   }
 });
 
-// Update employee
+// Update employee attendance
 router.put('/employees/:id', async (req, res) => {
   const { id } = req.params;
   const { name, contact, role, department, baseSalary, attendance } = req.body;
@@ -46,24 +46,24 @@ router.put('/employees/:id', async (req, res) => {
     const employee = await Employee.findById(id);
     if (!employee) return res.status(404).json({ message: 'Employee not found' });
 
-    const updatedAttendance = attendance
-      ? {
-          ...employee.attendance,
-          ...attendance,
-          date: attendance.date || employee.attendance.date,
-          hoursWorked: attendance.inTime && attendance.outTime
-            ? calculateHoursWorked(attendance.inTime, attendance.outTime)
-            : employee.attendance.hoursWorked
-        }
-      : employee.attendance;
+    const updatedAttendance = {
+      ...employee.attendance,
+      ...(attendance || {}),
+      date: attendance?.date || employee.attendance.date || new Date(),
+      inTime: attendance?.inTime || employee.attendance.inTime || '',
+      outTime: attendance?.outTime || employee.attendance.outTime || '',
+      hoursWorked: calculateHoursWorked(
+        attendance?.inTime || employee.attendance.inTime,
+        attendance?.outTime || employee.attendance.outTime
+      )
+    };
 
     const updatedEmployee = await Employee.findByIdAndUpdate(
       id,
       { name, contact, role, department, baseSalary, attendance: updatedAttendance },
       { new: true, runValidators: true }
     );
-    console.log('Updated employee:', updatedEmployee); // Debug log
-    res.json(updatedEmployee); // Return full updated employee
+    res.json(updatedEmployee);
   } catch (error) {
     res.status(500).json({ message: 'Error updating employee', error });
   }
@@ -81,13 +81,31 @@ router.delete('/employees/:id', async (req, res) => {
   }
 });
 
-// Generate payslip (updated to include hours worked)
+// Search employees
+router.get('/employees/search', async (req, res) => {
+  try {
+    const { query } = req.query;
+    if (!query) return res.status(400).json({ message: 'Search query is required' });
+    const employees = await Employee.find({
+      $or: [
+        { name: { $regex: query, $options: 'i' } },
+        { role: { $regex: query, $options: 'i' } },
+      ],
+    });
+    res.json(employees);
+  } catch (err) {
+    console.error('Error searching employees:', err);
+    res.status(500).json({ message: 'Error searching employees', error: err.message });
+  }
+});
+
+// Generate payslip
 router.get('/employees/:id/payslip', async (req, res) => {
   const { id } = req.params;
   try {
     const employee = await Employee.findById(id);
     if (!employee) return res.status(404).json({ message: 'Employee not found' });
-    const hourlyRate = employee.baseSalary / 160; // Assuming 160 hours/month as standard
+    const hourlyRate = employee.baseSalary / 160; // Assuming 160 hours/month
     const totalEarned = (employee.attendance?.hoursWorked || 0) * hourlyRate;
     res.json({
       name: employee.name,
@@ -103,6 +121,7 @@ router.get('/employees/:id/payslip', async (req, res) => {
 
 // Helper function to calculate hours worked
 function calculateHoursWorked(inTime, outTime) {
+  if (!inTime || !outTime) return 0;
   const inDate = new Date(`2000-01-01 ${inTime}`);
   const outDate = new Date(`2000-01-01 ${outTime}`);
   if (isNaN(inDate) || isNaN(outDate) || outDate <= inDate) return 0;
@@ -110,4 +129,4 @@ function calculateHoursWorked(inTime, outTime) {
   return Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100; // Hours with 2 decimals
 }
 
-module.exports = router;
+export default router;

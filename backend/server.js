@@ -11,10 +11,11 @@ import fs from 'fs';
 import PDFDocument from 'pdfkit';
 import Order from './models/Order.js';
 import Delivery from './models/Delivery.js';
-import Employee from './models/Employee.js'; 
+import Employee from './models/Employee.js';
 import Salary from './models/Salary.js';
 import Inventory from './models/Inventory.js';
 import fastCsv from 'fast-csv';
+import employeeRoutes from './routes/employeeRoutes.js'; // Import employee routes
 
 dotenv.config();
 
@@ -30,7 +31,7 @@ const __dirname = path.dirname(__filename);
 // Middleware to authenticate admin
 const authenticateAdmin = (req, res, next) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader && req.url !== '/api/dashboard/stream') { // Allow stream without token for now
+  if (!authHeader && req.url !== '/api/dashboard/stream') {
     console.error('No token provided');
     return res.status(401).json({ error: 'No token provided' });
   }
@@ -45,7 +46,7 @@ const authenticateAdmin = (req, res, next) => {
       res.status(401).json({ error: 'Invalid token', message: err.message });
     }
   } else {
-    next(); // Allow stream without token
+    next();
   }
 };
 
@@ -55,8 +56,8 @@ app.get('/api/dashboard/stream', authenticateAdmin, (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
-  res.setHeader('Access-Control-Allow-Origin', 'http://localhost:5173'); // Explicit CORS for frontend
-  res.setHeader('Access-Control-Allow-Credentials', 'true'); // Allow credentials
+  res.setHeader('Access-Control-Allow-Origin', 'http://localhost:5173');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.flushHeaders();
 
   const clientId = Date.now().toString();
@@ -70,7 +71,7 @@ app.get('/api/dashboard/stream', authenticateAdmin, (req, res) => {
 // CORS configuration
 app.use(cors({
   origin: 'http://localhost:5173',
-  credentials: true, // Allow cookies/auth headers
+  credentials: true,
 }));
 
 // Multer configuration
@@ -99,14 +100,15 @@ const upload = multer({
 }).fields([{ name: 'artworkFile', maxCount: 1 }]);
 
 // Express middleware
-app.use(cors({ origin: 'http://localhost:5173' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 app.use('/uploads', express.static('uploads'));
 
+// Employee Routes (integrated via employeeRoutes.js)
+app.use('/api', employeeRoutes);
 
-// Delivery Routes (unchanged)
+// Delivery Routes
 app.get('/api/deliveries', authenticateAdmin, async (req, res) => {
   try {
     const deliveries = await Delivery.find()
@@ -236,84 +238,7 @@ const initializeDeliveries = async () => {
   }
 };
 
-// Employee Routes
-app.get('/api/employees', async (req, res) => {
-  try {
-    const employees = await Employee.find();
-    res.json(employees);
-  } catch (error) {
-    res.status(500).json({ message: 'Error fetching employees' });
-  }
-});
-
-app.post('/api/employees', async (req, res) => {
-  const { name, contact, role, department, baseSalary } = req.body;
-  try {
-    if (!name || !contact || !baseSalary) {
-      return res.status(400).json({ message: 'Name, contact, and base salary are required' });
-    }
-    const employee = await Employee.findOneAndUpdate(
-      { name },
-      { contact, role, department, baseSalary, present: false },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-    res.status(201).json(employee);
-  } catch (error) {
-    res.status(500).json({ message: 'Error creating/updating employee' });
-  }
-});
-
-app.put('/api/employees/:id', async (req, res) => {
-  const { id } = req.params;
-  const { name, contact, role, department, baseSalary, present } = req.body;
-  try {
-    const employee = await Employee.findByIdAndUpdate(
-      id,
-      { name, contact, role, department, baseSalary, present },
-      { new: true }
-    );
-    if (!employee) return res.status(404).json({ message: 'Employee not found' });
-    res.json(employee);
-  } catch (error) {
-    res.status(500).json({ message: 'Error updating employee' });
-  }
-});
-
-app.delete('/api/employees/:id', authenticateAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    console.log('Deleting employee with id:', id);
-    const employee = await Employee.findOneAndDelete({ _id: id }); // Use _id for MongoDB
-    if (!employee) {
-      console.log('Employee not found with id:', id);
-      return res.status(404).json({ message: 'Employee not found' });
-    }
-    console.log('Employee deleted:', employee);
-    res.json({ message: 'Employee deleted' });
-  } catch (err) {
-    console.error('Error deleting employee:', err);
-    res.status(500).json({ message: 'Error deleting employee', error: err.message });
-  }
-});
-
-app.get('/api/employees/search', authenticateAdmin, async (req, res) => {
-  try {
-    const { query } = req.query;
-    if (!query) return res.status(400).json({ message: 'Search query is required' });
-    const employees = await Employee.find({
-      $or: [
-        { name: { $regex: query, $options: 'i' } },
-        { role: { $regex: query, $options: 'i' } },
-      ],
-    });
-    res.json(employees);
-  } catch (err) {
-    console.error('Error searching employees:', err);
-    res.status(500).json({ message: 'Error searching employees', error: err.message });
-  }
-});
-
-// Order Routes (unchanged)
+// Order Routes
 app.post('/api/orders', (req, res, next) => {
   upload(req, res, async (err) => {
     if (err) {
@@ -437,8 +362,7 @@ app.delete('/api/orders/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Salary Routes (unchanged)
-
+// Salary Routes
 app.get('/api/salaries/search', authenticateAdmin, async (req, res) => {
   try {
     const { query } = req.query;
@@ -455,7 +379,6 @@ app.get('/api/salaries/search', authenticateAdmin, async (req, res) => {
     res.status(500).json({ message: 'Error searching salaries', error: err.message });
   }
 });
-
 
 app.get('/api/salaries', authenticateAdmin, async (req, res) => {
   try {
@@ -506,7 +429,7 @@ app.put('/api/salaries/:id', authenticateAdmin, async (req, res) => {
 
 app.delete('/api/salaries/:id', authenticateAdmin, async (req, res) => {
   try {
-    const { id } = req.params; // This is the _id from the URL
+    const { id } = req.params;
     console.log('Attempting to delete salary with _id:', id);
     const deletedSalary = await Salary.findByIdAndDelete(id);
     if (!deletedSalary) {
@@ -551,17 +474,7 @@ app.put('/api/salaries/:id/mark-paid', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Employee Routes (unchanged)
-app.get('/api/employees', async (req, res) => {
-  try {
-    const employees = await Employee.find();
-    res.json(employees);
-  } catch (error) {
-    res.status(500).json({ message: 'Error fetching employees' });
-  }
-});
-
-// Inventory Routes (unchanged)
+// Inventory Routes
 app.get('/api/inventory', authenticateAdmin, async (req, res) => {
   try {
     const inventory = await Inventory.find().sort({ lastAdded: -1 });
@@ -663,7 +576,7 @@ app.delete('/api/inventory/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Admin Login (unchanged)
+// Admin Login
 app.post('/api/admin/login', async (req, res) => {
   const { email, password } = req.body;
   if (email === ADMIN_EMAIL && (await bcrypt.compare(password, ADMIN_PASSWORD))) {
@@ -673,7 +586,7 @@ app.post('/api/admin/login', async (req, res) => {
   res.status(401).json({ error: 'Invalid credentials' });
 });
 
-// Invoice and Report Routes (unchanged)
+// Invoice and Report Routes
 app.get('/api/orders/:id/invoice', authenticateAdmin, async (req, res) => {
   try {
     await generateInvoice(req, res);
