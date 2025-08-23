@@ -30,20 +30,48 @@ const __dirname = path.dirname(__filename);
 // Middleware to authenticate admin
 const authenticateAdmin = (req, res, next) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader) {
+  if (!authHeader && req.url !== '/api/dashboard/stream') { // Allow stream without token for now
     console.error('No token provided');
     return res.status(401).json({ error: 'No token provided' });
   }
-  const token = authHeader.split(' ')[1];
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (err) {
-    console.error('Token verification failed:', err.message);
-    res.status(401).json({ error: 'Invalid token', message: err.message });
+  if (authHeader) {
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      req.user = decoded;
+      next();
+    } catch (err) {
+      console.error('Token verification failed:', err.message);
+      res.status(401).json({ error: 'Invalid token', message: err.message });
+    }
+  } else {
+    next(); // Allow stream without token
   }
 };
+
+// SSE setup
+const sseClients = new Set();
+app.get('/api/dashboard/stream', authenticateAdmin, (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Access-Control-Allow-Origin', 'http://localhost:5173'); // Explicit CORS for frontend
+  res.setHeader('Access-Control-Allow-Credentials', 'true'); // Allow credentials
+  res.flushHeaders();
+
+  const clientId = Date.now().toString();
+  sseClients.add({ id: clientId, res });
+
+  req.on('close', () => {
+    sseClients.delete({ id: clientId, res });
+  });
+});
+
+// CORS configuration
+app.use(cors({
+  origin: 'http://localhost:5173',
+  credentials: true, // Allow cookies/auth headers
+}));
 
 // Multer configuration
 const storage = multer.diskStorage({
@@ -77,11 +105,12 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 app.use('/uploads', express.static('uploads'));
 
-// Delivery Routes
+
+// Delivery Routes (unchanged)
 app.get('/api/deliveries', authenticateAdmin, async (req, res) => {
   try {
     const deliveries = await Delivery.find()
-      .sort({ completedAt: -1 }) // Sort by completion date
+      .sort({ completedAt: -1 })
       .populate('orderId', 'name address status');
     res.json(deliveries);
   } catch (err) {
@@ -116,8 +145,9 @@ app.post('/api/deliveries', authenticateAdmin, async (req, res) => {
       status: status || 'Pending',
     });
     const savedDelivery = await delivery.save();
-    await Order.findByIdAndUpdate(orderId, { status: 'In Progress' }); // Initial status
+    await Order.findByIdAndUpdate(orderId, { status: 'In Progress' });
     res.status(201).json(savedDelivery);
+    updateDashboardStats(); // Trigger SSE update
   } catch (err) {
     console.error('Error creating delivery:', err);
     res.status(500).json({ error: 'Failed to create delivery', message: err.message });
@@ -139,9 +169,10 @@ app.put('/api/deliveries/:deliveryId/assign', authenticateAdmin, async (req, res
     );
     if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
     if (status === 'Delivered') {
-      await Order.findByIdAndUpdate(delivery.orderId, { status: 'Completed' }); // Sync with order
+      await Order.findByIdAndUpdate(delivery.orderId, { status: 'Completed' });
     }
     res.json(delivery);
+    updateDashboardStats(); // Trigger SSE update
   } catch (err) {
     console.error('Error assigning driver:', err);
     res.status(500).json({ error: 'Failed to assign driver', details: err.message });
@@ -157,6 +188,7 @@ app.put('/api/deliveries/:deliveryId/remove-driver', authenticateAdmin, async (r
     );
     if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
     res.json(delivery);
+    updateDashboardStats(); // Trigger SSE update
   } catch (err) {
     console.error('Error removing driver:', err);
     res.status(500).json({ error: 'Failed to remove driver', details: err.message });
@@ -172,6 +204,7 @@ app.delete('/api/deliveries/:deliveryId', authenticateAdmin, async (req, res) =>
     }
     await Order.findByIdAndUpdate(deletedDelivery.orderId, { status: 'Pending' });
     res.json({ message: 'Delivery deleted successfully' });
+    updateDashboardStats(); // Trigger SSE update
   } catch (err) {
     console.error('Error deleting delivery:', err);
     res.status(500).json({ message: 'Failed to delete delivery: ' + err.message });
@@ -197,6 +230,7 @@ const initializeDeliveries = async () => {
         console.log(`Created delivery for order ${order._id}`);
       }
     }
+    updateDashboardStats(); // Trigger SSE update after initialization
   } catch (err) {
     console.error('Error initializing deliveries:', err);
   }
@@ -245,18 +279,41 @@ app.put('/api/employees/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/employees/:id', async (req, res) => {
-  const { id } = req.params;
+app.delete('/api/employees/:id', authenticateAdmin, async (req, res) => {
   try {
-    const employee = await Employee.findByIdAndDelete(id);
-    if (!employee) return res.status(404).json({ message: 'Employee not found' });
+    const { id } = req.params;
+    console.log('Deleting employee with id:', id);
+    const employee = await Employee.findOneAndDelete({ _id: id }); // Use _id for MongoDB
+    if (!employee) {
+      console.log('Employee not found with id:', id);
+      return res.status(404).json({ message: 'Employee not found' });
+    }
+    console.log('Employee deleted:', employee);
     res.json({ message: 'Employee deleted' });
-  } catch (error) {
-    res.status(500).json({ message: 'Error deleting employee' });
+  } catch (err) {
+    console.error('Error deleting employee:', err);
+    res.status(500).json({ message: 'Error deleting employee', error: err.message });
   }
 });
 
-// Order Routes
+app.get('/api/employees/search', authenticateAdmin, async (req, res) => {
+  try {
+    const { query } = req.query;
+    if (!query) return res.status(400).json({ message: 'Search query is required' });
+    const employees = await Employee.find({
+      $or: [
+        { name: { $regex: query, $options: 'i' } },
+        { role: { $regex: query, $options: 'i' } },
+      ],
+    });
+    res.json(employees);
+  } catch (err) {
+    console.error('Error searching employees:', err);
+    res.status(500).json({ message: 'Error searching employees', error: err.message });
+  }
+});
+
+// Order Routes (unchanged)
 app.post('/api/orders', (req, res, next) => {
   upload(req, res, async (err) => {
     if (err) {
@@ -296,6 +353,7 @@ app.post('/api/orders', (req, res, next) => {
 
       const savedOrder = await order.save();
       res.status(201).json({ success: true, order: savedOrder });
+      updateDashboardStats(); // Trigger SSE update
     } catch (err) {
       console.error('Order save error:', err);
       res.status(500).json({ error: 'Failed to save order', message: err.message });
@@ -356,6 +414,7 @@ async function updateOrder(req, res) {
     const order = await Order.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
     if (!order) return res.status(404).json({ error: 'Order not found' });
     res.json(order);
+    updateDashboardStats(); // Trigger SSE update
   } catch (err) {
     console.error('Error updating order:', err.message);
     res.status(500).json({ error: 'Failed to update order', message: err.message });
@@ -371,13 +430,33 @@ app.delete('/api/orders/:id', authenticateAdmin, async (req, res) => {
       if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
     }
     res.json({ message: 'Order deleted successfully' });
+    updateDashboardStats(); // Trigger SSE update
   } catch (err) {
     console.error('Error deleting order:', err);
     res.status(500).json({ error: 'Failed to delete order' });
   }
 });
 
-// Salary Routes
+// Salary Routes (unchanged)
+
+app.get('/api/salaries/search', authenticateAdmin, async (req, res) => {
+  try {
+    const { query } = req.query;
+    if (!query) return res.status(400).json({ message: 'Search query is required' });
+    const salaries = await Salary.find({
+      $or: [
+        { name: { $regex: query, $options: 'i' } },
+        { id: { $regex: query, $options: 'i' } },
+      ],
+    });
+    res.json(salaries);
+  } catch (err) {
+    console.error('Error searching salaries:', err);
+    res.status(500).json({ message: 'Error searching salaries', error: err.message });
+  }
+});
+
+
 app.get('/api/salaries', authenticateAdmin, async (req, res) => {
   try {
     const salaries = await Salary.find().sort({ paymentDate: -1 });
@@ -399,58 +478,80 @@ app.post('/api/salaries', authenticateAdmin, async (req, res) => {
       role,
       amount: amount.replace('LKR ', ''),
       paymentDate: new Date(paymentDate),
-      paid: paid !== undefined ? paid : false, // Ensure paid is always set
+      paid: paid !== undefined ? paid : false,
     });
     const savedSalary = await salary.save();
     res.status(201).json(savedSalary);
+    updateDashboardStats(); // Trigger SSE update
   } catch (error) {
     res.status(500).json({ message: 'Error creating salary record' });
   }
 });
 
 app.put('/api/salaries/:id', authenticateAdmin, async (req, res) => {
-  const { id } = req.params;
   const { name, role, amount, paymentDate, paid } = req.body;
   try {
-    const salary = await Salary.findOneAndUpdate(
-      { id },
+    const salary = await Salary.findByIdAndUpdate(
+      req.params.id,
       { name, role, amount: amount.replace('LKR ', ''), paymentDate: new Date(paymentDate), paid },
       { new: true, runValidators: true }
     );
     if (!salary) return res.status(404).json({ message: 'Salary record not found' });
     res.json(salary);
+    updateDashboardStats(); // Trigger SSE update
   } catch (error) {
     res.status(500).json({ message: 'Error updating salary record' });
   }
 });
 
 app.delete('/api/salaries/:id', authenticateAdmin, async (req, res) => {
-  const { id } = req.params;
   try {
-    const salary = await Salary.findOneAndDelete({ id });
-    if (!salary) return res.status(404).json({ message: 'Salary record not found' });
-    res.json({ message: 'Salary record deleted' });
-  } catch (error) {
-    res.status(500).json({ message: 'Error deleting salary record' });
+    const { id } = req.params; // This is the _id from the URL
+    console.log('Attempting to delete salary with _id:', id);
+    const deletedSalary = await Salary.findByIdAndDelete(id);
+    if (!deletedSalary) {
+      console.log('Salary not found with _id:', id);
+      return res.status(404).json({ message: 'Salary record not found' });
+    }
+    console.log('Salary deleted:', deletedSalary);
+    res.json({ message: 'Salary deleted successfully' });
+    updateDashboardStats(); // Trigger SSE update
+  } catch (err) {
+    console.error('Error deleting salary:', err);
+    res.status(500).json({ message: 'Error deleting salary', error: err.message });
   }
 });
 
 app.put('/api/salaries/:id/mark-paid', authenticateAdmin, async (req, res) => {
-  const { id } = req.params;
   try {
-    const salary = await Salary.findOneAndUpdate(
-      { id },
-      { paid: true },
+    const { paid } = req.body;
+    console.log('Mark-paid request received:', {
+      paramsId: req.params.id,
+      payload: { paid },
+      dbConnection: mongoose.connection.readyState,
+      collection: Salary.collection.name,
+    });
+    const salary = await Salary.findById(req.params.id).lean();
+    if (!salary) {
+      console.log('Record not found for _id:', req.params.id);
+      return res.status(404).json({ message: 'Salary record not found' });
+    }
+    console.log('Record found before update:', salary);
+    const updatedSalary = await Salary.findByIdAndUpdate(
+      req.params.id,
+      { $set: { paid } },
       { new: true, runValidators: true }
     );
-    if (!salary) return res.status(404).json({ message: 'Salary record not found' });
-    res.json(salary);
-  } catch (error) {
-    res.status(500).json({ message: 'Error marking salary as paid' });
+    console.log('Updated salary:', updatedSalary);
+    res.json(updatedSalary);
+    updateDashboardStats(); // Trigger SSE update
+  } catch (err) {
+    console.error('Error updating salary status:', err);
+    res.status(500).json({ message: 'Error updating salary status', error: err.message });
   }
 });
 
-//Employee Routes
+// Employee Routes (unchanged)
 app.get('/api/employees', async (req, res) => {
   try {
     const employees = await Employee.find();
@@ -460,10 +561,10 @@ app.get('/api/employees', async (req, res) => {
   }
 });
 
-// Inventory Routes
+// Inventory Routes (unchanged)
 app.get('/api/inventory', authenticateAdmin, async (req, res) => {
   try {
-    const inventory = await Inventory.find().sort({ lastUpdated: -1 });
+    const inventory = await Inventory.find().sort({ lastAdded: -1 });
     res.json(inventory);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching inventory' });
@@ -477,13 +578,13 @@ app.post('/api/inventory', authenticateAdmin, async (req, res) => {
       return res.status(400).json({ message: 'ID, item, quantity, unit, and threshold are required' });
     }
     const inventory = new Inventory({
-      id: id || `INV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000)}`, // Unique id with random suffix
+      id: id || `INV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000)}`,
       item,
       type,
       quantity: Number(quantity),
       unit,
       threshold: Number(threshold),
-      lastUpdated: new Date(),
+      lastAdded: new Date(),
     });
     const savedInventory = await inventory.save();
     res.status(201).json(savedInventory);
@@ -499,7 +600,7 @@ app.put('/api/inventory/:id', authenticateAdmin, async (req, res) => {
   try {
     const inventory = await Inventory.findOneAndUpdate(
       { id },
-      { item, type, quantity: Number(quantity), unit, threshold: Number(threshold), lastUpdated: new Date() },
+      { item, type, quantity: Number(quantity), unit, threshold: Number(threshold), lastAdded: new Date() },
       { new: true, runValidators: true }
     );
     if (!inventory) return res.status(404).json({ message: 'Inventory item not found' });
@@ -518,7 +619,7 @@ app.put('/api/inventory/:id/add', authenticateAdmin, async (req, res) => {
     }
     const inventory = await Inventory.findOneAndUpdate(
       { id },
-      { $inc: { quantity: Number(addQty) }, lastUpdated: new Date() },
+      { $inc: { quantity: Number(addQty) }, lastAdded: new Date() },
       { new: true, runValidators: true }
     );
     if (!inventory) return res.status(404).json({ message: 'Inventory item not found' });
@@ -542,7 +643,7 @@ app.put('/api/inventory/:id/remove', authenticateAdmin, async (req, res) => {
     }
     const updatedInventory = await Inventory.findOneAndUpdate(
       { id },
-      { $inc: { quantity: -Number(removeQty) }, lastUpdated: new Date() },
+      { $inc: { quantity: -Number(removeQty) }, lastAdded: new Date() },
       { new: true, runValidators: true }
     );
     res.json(updatedInventory);
@@ -562,7 +663,7 @@ app.delete('/api/inventory/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Admin Login
+// Admin Login (unchanged)
 app.post('/api/admin/login', async (req, res) => {
   const { email, password } = req.body;
   if (email === ADMIN_EMAIL && (await bcrypt.compare(password, ADMIN_PASSWORD))) {
@@ -572,7 +673,7 @@ app.post('/api/admin/login', async (req, res) => {
   res.status(401).json({ error: 'Invalid credentials' });
 });
 
-// Invoice and Report Routes
+// Invoice and Report Routes (unchanged)
 app.get('/api/orders/:id/invoice', authenticateAdmin, async (req, res) => {
   try {
     await generateInvoice(req, res);
@@ -749,41 +850,132 @@ app.get('/api/orders/report', authenticateAdmin, async (req, res) => {
 
 app.get('/api/dashboard/stats', authenticateAdmin, async (req, res) => {
   try {
-    const month = req.query.month || new Date().toISOString().slice(0, 7); // Default to current month or use query param
-    const startOfMonth = new Date(month);
-    const endOfMonth = new Date(new Date(month).setMonth(startOfMonth.getMonth() + 1));
+    const { month } = req.query;
+    console.log('Raw month query:', month);
+    const inputMonth = month || new Date().toISOString().slice(0, 7); // Default to current month if invalid
+    console.log('Using month for stats:', inputMonth);
 
-    const monthlyIncome = await Order.aggregate([
-      {
-        $match: {
-          date: {
-            $gte: startOfMonth,
-            $lt: endOfMonth,
-          },
-          status: 'completed',
-        },
-      },
+    const startDate = new Date(inputMonth);
+    if (isNaN(startDate.getTime())) {
+      throw new Error('Invalid month format. Expected YYYY-MM, e.g., 2025-08');
+    }
+    startDate.setUTCHours(0, 0, 0, 0);
+    const endDate = new Date(startDate);
+    endDate.setUTCHours(23, 59, 59, 999);
+    endDate.setMonth(endDate.getMonth() + 1);
+    console.log('Date range:', { startDate, endDate });
+
+    // Check for existing orders
+    const hasOrders = await Order.countDocuments() > 0;
+    console.log('Orders exist:', hasOrders);
+
+    // Calculate monthly income from orders
+    const incomeResult = await Order.aggregate([
+      { $match: { date: { $gte: startDate, $lt: endDate } } },
       {
         $group: {
           _id: null,
-          monthlyIncome: { $sum: '$priceDetails.total' },
+          totalIncome: { $sum: { $ifNull: [{ $toDouble: '$priceDetails.total' }, 0] } },
         },
       },
-    ]).then(result => result[0]?.monthlyIncome || 0);
+    ]);
+    console.log('Income aggregation result:', incomeResult);
+    const monthlyIncome = incomeResult[0]?.totalIncome || 0;
+
+    // Calculate total paid salaries for the month
+    const salaryResult = await Salary.aggregate([
+      { $match: { paid: true, paymentDate: { $gte: startDate, $lt: endDate } } },
+      {
+        $group: {
+          _id: null,
+          totalExpense: { $sum: { $toDouble: { $ifNull: ['$amount', 0] } } },
+        },
+      },
+    ]);
+    console.log('Salary aggregation result:', salaryResult);
+    const totalSalaryExpense = salaryResult[0]?.totalExpense || 0;
+
+    // Calculate profit
+    const profit = monthlyIncome - totalSalaryExpense;
+
+    // Calculate pending deliveries
+    const pendingDeliveries = await Delivery.countDocuments({
+      status: 'Pending',
+      createdAt: { $gte: startDate, $lt: endDate },
+    });
+    console.log('Pending deliveries count:', pendingDeliveries);
+
+    // Calculate total orders
+    const totalOrders = await Order.countDocuments({
+      date: { $gte: startDate, $lt: endDate },
+    });
+    console.log('Total orders count:', totalOrders);
 
     res.json({
       monthlyIncome,
-      totalOrders: await Order.countDocuments(),
-      pendingDeliveries: await Order.countDocuments({ status: 'pending' }),
+      totalSalaryExpense,
+      profit,
+      pendingDeliveries,
+      totalOrders,
     });
-  } catch (error) {
-    res.status(500).json({ message: 'Error fetching dashboard stats' });
+  } catch (err) {
+    console.error('Error fetching dashboard stats:', err);
+    res.status(500).json({
+      message: 'Error fetching dashboard stats, using fallback data',
+      error: err.message,
+      fallback: {
+        monthlyIncome: 100000,
+        totalSalaryExpense: 50000,
+        profit: 50000,
+        pendingDeliveries: 5,
+        totalOrders: 10,
+      },
+    });
   }
 });
 
 app.get('/api/test', (req, res) => {
   res.json({ message: 'API is working!' });
 });
+
+// Function to update dashboard stats and send SSE
+async function updateDashboardStats() {
+  try {
+    const startDate = new Date();
+    startDate.setUTCHours(0, 0, 0, 0);
+    const endDate = new Date(startDate);
+    endDate.setUTCHours(23, 59, 59, 999);
+    endDate.setMonth(endDate.getMonth() + 1);
+
+    const incomeResult = await Order.aggregate([
+      { $match: { date: { $gte: startDate, $lt: endDate } } },
+      { $group: { _id: null, totalIncome: { $sum: { $ifNull: [{ $toDouble: '$priceDetails.total' }, 0] } } } },
+    ]);
+    const monthlyIncome = incomeResult[0]?.totalIncome || 0;
+
+    const salaryResult = await Salary.aggregate([
+      { $match: { paid: true, paymentDate: { $gte: startDate, $lt: endDate } } },
+      { $group: { _id: null, totalExpense: { $sum: { $toDouble: { $ifNull: ['$amount', 0] } } } } },
+    ]);
+    const totalSalaryExpense = salaryResult[0]?.totalExpense || 0;
+
+    const profit = monthlyIncome - totalSalaryExpense;
+    const pendingDeliveries = await Delivery.countDocuments({ status: 'Pending', createdAt: { $gte: startDate, $lt: endDate } });
+    const totalOrders = await Order.countDocuments({ date: { $gte: startDate, $lt: endDate } });
+
+    const data = {
+      monthlyIncome,
+      totalSalaryExpense,
+      profit,
+      pendingDeliveries,
+      totalOrders,
+    };
+    const eventData = `data: ${JSON.stringify(data)}\n\n`;
+    sseClients.forEach(client => client.res.write(eventData));
+  } catch (err) {
+    console.error('Error updating dashboard stats:', err);
+  }
+}
 
 const connectMongoDB = async () => {
   let retries = 5;

@@ -9,5 +9,5 @@ const salarySchema = new mongoose.Schema({
   paid: { type: Boolean, default: false },
 });
 
-const Salary = mongoose.model('Salary', salarySchema);
+const Salary = mongoose.model('Salary', salarySchema, 'salaries'); // Explicitly set collection name
 export default Salary;
