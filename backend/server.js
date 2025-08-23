@@ -397,9 +397,9 @@ app.post('/api/salaries', authenticateAdmin, async (req, res) => {
       id,
       name,
       role,
-      amount: amount.replace('LKR ', ''), // Remove 'LKR ' prefix if present
+      amount: amount.replace('LKR ', ''),
       paymentDate: new Date(paymentDate),
-      paid: paid || false,
+      paid: paid !== undefined ? paid : false, // Ensure paid is always set
     });
     const savedSalary = await salary.save();
     res.status(201).json(savedSalary);
@@ -749,17 +749,35 @@ app.get('/api/orders/report', authenticateAdmin, async (req, res) => {
 
 app.get('/api/dashboard/stats', authenticateAdmin, async (req, res) => {
   try {
-    const totalOrders = await Order.countDocuments();
-    const pendingDeliveries = await Order.countDocuments({ status: 'Pending' });
-    const monthlyIncome = await Order.aggregate([
-  { $match: { date: { $gte: new Date(new Date().setDate(new Date().getDate() - 30)) } } },
-  { $group: { _id: null, total: { $sum: { $ifNull: ['$priceDetails.total', 0] } } } },
-]).then((result) => result[0]?.total || 0);
+    const month = req.query.month || new Date().toISOString().slice(0, 7); // Default to current month or use query param
+    const startOfMonth = new Date(month);
+    const endOfMonth = new Date(new Date(month).setMonth(startOfMonth.getMonth() + 1));
 
-    res.json({ totalOrders, pendingDeliveries, monthlyIncome });
-  } catch (err) {
-    console.error('Error fetching dashboard stats:', err);
-    res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+    const monthlyIncome = await Order.aggregate([
+      {
+        $match: {
+          date: {
+            $gte: startOfMonth,
+            $lt: endOfMonth,
+          },
+          status: 'completed',
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          monthlyIncome: { $sum: '$priceDetails.total' },
+        },
+      },
+    ]).then(result => result[0]?.monthlyIncome || 0);
+
+    res.json({
+      monthlyIncome,
+      totalOrders: await Order.countDocuments(),
+      pendingDeliveries: await Order.countDocuments({ status: 'pending' }),
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching dashboard stats' });
   }
 });
 
