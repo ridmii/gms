@@ -9,10 +9,10 @@ import OrderDashboard from './components/OrderDashboard';
 import CustomerLogin from './components/CustomerLogin';
 import CustomerRegister from './components/CustomerRegister';
 import ProtectedRoute from './components/ProtectedRoute';
-import DeliveryPage from './components/DeliveryManagement'; 
-import Inventory from './components/Inventory'; 
-import Employee from './components/Employee'; 
-import Finance from './components/Finance'; 
+import DeliveryPage from './components/DeliveryManagement'; // Correct import
+import Inventory from './components/Inventory';
+import Employee from './components/Employee';
+import Finance from './components/Finance';
 
 const App = () => {
   return (
@@ -44,7 +44,7 @@ const App = () => {
           path="/admin/deliveries"
           element={
             <ProtectedRoute>
-              <DeliveryPage/>
+              <DeliveryPage /> {/* Changed from DeliveryManagement to DeliveryPage */}
             </ProtectedRoute>
           }
         />

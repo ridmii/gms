@@ -1,355 +1,583 @@
-import React, { useEffect, useState } from 'react';
-import { FiSearch, FiPlus, FiTruck, FiCheck, FiLogOut, FiTrash2, FiX, FiClock } from 'react-icons/fi';
-import AdminSidebar from './AdminSidebar';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
+import AdminSidebar from './AdminSidebar';
+import { FiLogOut } from 'react-icons/fi';
+
+const API_BASE_URL = 'http://localhost:5000/api';
 
 const DeliveryManagement = () => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [timeFilter, setTimeFilter] = useState('all');
   const [deliveries, setDeliveries] = useState([]);
-  const [unassignedOrders, setUnassignedOrders] = useState([]);
-  const [drivers, setDrivers] = useState(['Namal Perera', 'Geeth Kawshal', 'Samantha Pieris']);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [token] = useState(localStorage.getItem('adminToken') || '');
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deliveryToDelete, setDeliveryToDelete] = useState(null);
+  const [success, setSuccess] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [showReports, setShowReports] = useState(false);
+  const [editingDelivery, setEditingDelivery] = useState(null);
+  const navigate = useNavigate();
+
+  const [formData, setFormData] = useState({
+    deliveryId: '',
+    orderId: '',
+    customerName: '',
+    address: '',
+    assignedTo: '',
+    employeeNumber: '',
+    orderDate: '',
+    status: 'Pending',
+  });
+
+  // Fetch admin name from token (assuming JWT decoding or simple storage)
+  const adminToken = localStorage.getItem('adminToken');
+  const adminName = adminToken ? JSON.parse(atob(adminToken.split('.')[1])).name || 'Admin' : 'Admin'; // Decode JWT or fallback
+  const adminEmail = adminToken ? JSON.parse(atob(adminToken.split('.')[1])).email || 'admin@dimalsha.com' : 'admin@dimalsha.com'; // Fallback email
+
+  const fetchDeliveries = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('adminToken');
+      const response = await fetch(`${API_BASE_URL}/deliveries`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Failed to fetch');
+      const data = await response.json();
+      setDeliveries(data);
+    } catch (err) {
+      setError('Failed to fetch deliveries');
+      console.error('Error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchData = async () => {
-      if (!token) {
-        setError('No authentication token found. Please log in.');
-        setIsLoading(false);
-        return;
-      }
-      setIsLoading(true);
-      try {
-        const [deliveriesRes, ordersRes] = await Promise.all([
-          axios.get('http://localhost:5000/api/deliveries', {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-          axios.get('http://localhost:5000/api/orders/unassigned', {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-        ]);
-        setDeliveries(Array.isArray(deliveriesRes.data) ? deliveriesRes.data : []);
-        setUnassignedOrders(Array.isArray(ordersRes.data) ? ordersRes.data.filter(order => order.status === 'Pending') : []);
-        setError(null);
-      } catch (err) {
-        setError('Failed to load data: ' + (err.response?.data?.message || err.message));
-        console.error('Fetch error:', err);
-        setDeliveries([]);
-        setUnassignedOrders([]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchData();
-  }, [token]);
-
-  const assignDelivery = async (orderId) => {
-    const order = unassignedOrders.find(o => o._id === orderId);
-    if (!order) return;
-
-    const busyDrivers = deliveries
-      .filter(d => ['In Progress', 'Delivered'].includes(d.status) && d.assignedTo)
-      .map(d => d.assignedTo);
-    const availableDrivers = drivers.filter(d => !busyDrivers.includes(d));
-    const driver = availableDrivers.length > 0 ? availableDrivers[0] : null;
-
-    if (!driver) {
-      setError('No drivers available. Please reassign existing deliveries.');
+    const token = localStorage.getItem('adminToken');
+    if (!token) {
+      navigate('/admin/login');
       return;
     }
 
-    try {
-      const deliveryData = {
-        orderId: order._id,
-        customer: order.name || 'Unknown Customer',
-        address: order.address || 'Not provided',
-        assignedTo: driver,
-        status: 'Pending',
-      };
-      const response = await axios.post('http://localhost:5000/api/deliveries', deliveryData, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setDeliveries(prev => [...prev, response.data].sort((a, b) => (a.deliveryId || '').localeCompare(b.deliveryId || '')));
-      setUnassignedOrders(prev => prev.filter(o => o._id !== orderId));
-      setError(null);
-    } catch (err) {
-      setError('Failed to assign delivery: ' + (err.response?.data?.message || err.message));
-      console.error('Assign error:', err);
-    }
-  };
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const token = localStorage.getItem('adminToken');
+        const [deliveriesResponse, ordersResponse] = await Promise.all([
+          axios.get(`${API_BASE_URL}/deliveries`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          axios.get(`${API_BASE_URL}/orders/admin`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ]);
+        setDeliveries(deliveriesResponse.data || []);
 
-  const updateDelivery = async (deliveryId, updates) => {
-    try {
-      const response = await axios.put(`http://localhost:5000/api/deliveries/${deliveryId}/assign`, updates, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setDeliveries(prev => prev.map(d => (d.deliveryId === deliveryId ? response.data : d)));
-      setError(null);
-    } catch (err) {
-      setError('Failed to update delivery: ' + (err.response?.data?.message || err.message));
-      console.error('Update error:', err);
-    }
-  };
-
-  const deleteDelivery = async (deliveryId) => {
-    try {
-      const response = await axios.delete(`http://localhost:5000/api/deliveries/${deliveryId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.status === 200 || response.status === 204) {
-        setDeliveries(prev => prev.filter(d => d.deliveryId !== deliveryId));
-        setShowDeleteConfirm(false);
-        setDeliveryToDelete(null);
+        const pendingOrders = ordersResponse.data.filter((order) => order.status === 'Pending');
+        for (const order of pendingOrders) {
+          const existingDelivery = deliveriesResponse.data.find((d) => d.orderId === order._id);
+          if (!existingDelivery) {
+            await axios.post(
+              `${API_BASE_URL}/deliveries`,
+              {
+                orderId: order._id,
+                customerName: order.name,
+                address: order.address,
+                driver: {
+                  name: '',
+                  employeeNumber: '',
+                },
+                orderDate: new Date().toISOString(),
+                status: 'Pending',
+              },
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+          }
+        }
+        const updatedDeliveries = await axios.get(`${API_BASE_URL}/deliveries`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setDeliveries(updatedDeliveries.data || []);
         setError(null);
-      } else {
-        setError('Unexpected response from server');
+      } catch (err) {
+        setError('Failed to fetch deliveries or orders.');
+        if (err.response?.status === 401) {
+          localStorage.removeItem('adminToken');
+          navigate('/admin/login');
+        }
+        console.error('API Error:', err.response?.data || err.message);
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      setError('Failed to delete delivery: ' + (err.response?.data?.message || err.message));
-      console.error('Delete error:', err);
-    }
+    };
+
+    fetchData();
+  }, [navigate]);
+
+  const handleInputChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
   };
 
-  const handleStatusChange = (deliveryId, newStatus) => {
-    updateDelivery(deliveryId, { status: newStatus });
-  };
-
-  const handleDriverChange = (deliveryId, newDriver) => {
-    updateDelivery(deliveryId, { assignedTo: newDriver });
-  };
-
-  const confirmDelete = (deliveryId) => {
-    setDeliveryToDelete(deliveryId);
-    setShowDeleteConfirm(true);
-  };
-
-  const cancelDelete = () => {
-    setShowDeleteConfirm(false);
-    setDeliveryToDelete(null);
-  };
-
-  const getShortId = (id) => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     try {
-      return id ? (typeof id === 'string' ? id.slice(-8) : id.toString().slice(-8)) : 'N/A';
-    } catch (e) {
-      console.error('Error parsing ID:', e);
-      return 'N/A';
+      const token = localStorage.getItem('adminToken');
+      const method = editingDelivery ? 'PUT' : 'POST';
+      const url = editingDelivery
+        ? `${API_BASE_URL}/deliveries/${editingDelivery._id}`
+        : `${API_BASE_URL}/deliveries`;
+
+      const payload = {
+        customerName: formData.customerName,
+        address: formData.address,
+        status: formData.status,
+        orderDate: formData.orderDate || new Date().toISOString(),
+        driver: {
+          name: formData.assignedTo || '',
+          employeeNumber: formData.employeeNumber || '',
+        },
+        deliveryId: formData.deliveryId,
+        orderId: formData.orderId,
+      };
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) throw new Error('Failed to save');
+
+      fetchDeliveries();
+      resetForm();
+      setShowForm(false);
+
+      setSuccess(
+        editingDelivery
+          ? 'Delivery updated successfully!'
+          : 'Delivery added successfully!'
+      );
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError('Failed to save delivery');
+      console.error('Error:', err);
     }
   };
 
-  const getStatusBadge = (status) => {
-    const base = 'px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center transition-all';
-    switch (status) {
-      case 'In Progress':
-        return <span className={`${base} bg-blue-100 text-blue-800`}><FiTruck className="mr-1" /> In Progress</span>;
-      case 'Delivered':
-        return <span className={`${base} bg-green-100 text-green-800`}><FiCheck className="mr-1" /> Delivered</span>;
-      default:
-        return <span className={`${base} bg-yellow-100 text-yellow-800`}><FiClock className="mr-1" /> Pending</span>;
+  const resetForm = () => {
+    setFormData({
+      deliveryId: '',
+      orderId: '',
+      customerName: '',
+      address: '',
+      assignedTo: '',
+      employeeNumber: '',
+      orderDate: '',
+      status: 'Pending',
+    });
+    setEditingDelivery(null);
+  };
+
+  const handleEdit = (delivery) => {
+    setFormData({
+      deliveryId: delivery.deliveryId || '',
+      orderId: delivery.orderId || '',
+      customerName: delivery.customerName || '',
+      address: delivery.address || '',
+      assignedTo: delivery.driver?.name || '',
+      employeeNumber: delivery.driver?.employeeNumber || '',
+      orderDate: delivery.orderDate ? new Date(delivery.orderDate).toISOString().split('T')[0] : '',
+      status: delivery.status || 'Pending',
+    });
+    setEditingDelivery(delivery);
+    setShowForm(true);
+    setShowReports(false);
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm('Are you sure you want to delete this delivery?')) {
+      try {
+        const token = localStorage.getItem('adminToken');
+        const response = await fetch(`${API_BASE_URL}/deliveries/${id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) throw new Error('Failed to delete');
+        fetchDeliveries();
+        setSuccess('Delivery deleted successfully!');
+        setTimeout(() => setSuccess(null), 3000);
+      } catch (err) {
+        setError('Failed to delete delivery');
+        console.error('Error:', err);
+      }
     }
   };
 
-  const filteredDeliveries = deliveries.filter((d) => {
-    const customer = d.customer || '';
-    const deliveryId = d.deliveryId || '';
-    const match = customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                  deliveryId.toLowerCase().includes(searchTerm.toLowerCase());
-    if (timeFilter === 'all') return match;
-    const now = new Date();
-    const completed = d.completedAt ? new Date(d.completedAt) : null;
-    const cutoff = new Date(now);
-    if (timeFilter === '7days') cutoff.setDate(now.getDate() - 7);
-    else if (timeFilter === '30days') cutoff.setDate(now.getDate() - 30);
-    return match && completed && !isNaN(completed.getTime()) && completed >= cutoff;
-  });
+  const handleStatusChange = async (id, newStatus) => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      const response = await fetch(`${API_BASE_URL}/deliveries/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!response.ok) throw new Error('Failed to update');
+      fetchDeliveries();
+      setSuccess(`Status updated to ${newStatus} successfully!`);
+      setTimeout(() => setSuccess(null), 2000);
+    } catch (err) {
+      setError('Failed to update status');
+      console.error('Error:', err);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('adminToken');
+    navigate('/admin/login');
+  };
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          height: '100vh',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div
+            style={{
+              width: '32px',
+              height: '32px',
+              border: '3px solid #e2e8f0',
+              borderTop: '3px solid #3182ce',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite',
+            }}
+          ></div>
+          <span style={{ fontSize: '16px', color: '#4a5568' }}>
+            Loading deliveries...
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen flex bg-gray-50 font-poppins text-gray-800">
+    <div className="min-h-screen flex bg-gray-100 font-inter">
+      {/* Sidebar */}
       <AdminSidebar activePage="deliveries" />
-      <main className="ml-64 w-full p-6 transition-all duration-300 ease-in-out">
-        <div className="flex justify-between items-center mb-8">
+
+      {/* Main Content with Header */}
+      <main className="ml-64 w-full p-6">
+        <div className="flex justify-between items-center mb-6">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Delivery Management</h1>
-            <p className="text-sm text-gray-600 mt-1">Track and manage order deliveries efficiently</p>
+            <h1 className="text-2xl font-bold text-gray-800">Delivery Management</h1>
+            <p className="text-sm text-gray-500">Manage delivery details</p>
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
-              <p className="text-sm font-medium text-gray-900">Admin User</p>
-              <p className="text-xs text-gray-500">admin@dimalsha.com</p>
+              <p className="text-sm font-medium text-gray-800">Admin User</p>
+              <p className="text-xs text-gray-500">{adminEmail}</p>
             </div>
-            <div className="w-10 h-10 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">
-              AU
+            <div className="w-9 h-9 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">
+              {adminName.charAt(0).toUpperCase()}
+              {adminName.split(' ')[1]?.charAt(0).toUpperCase() || ''}
             </div>
-            <FiLogOut className="text-gray-500 hover:text-red-500 cursor-pointer" size={20} />
+            <FiLogOut
+              className="text-gray-500 hover:text-red-500 cursor-pointer"
+              size={18}
+              onClick={handleLogout}
+            />
           </div>
         </div>
-        <div className="bg-white p-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 mb-8">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6">
-            <div className="relative w-full md:w-1/3">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-              </span>
-              <input
-                type="text"
-                placeholder="Search by customer or delivery ID"
-                className="pl-10 pr-4 py-2 w-full border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            <div className="flex items-center gap-4">
-              <select
-                value={timeFilter}
-                onChange={(e) => setTimeFilter(e.target.value)}
-                className="p-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-indigo-500 transition-all"
+
+        {/* Main Content */}
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          {/* Success Message */}
+          {success && (
+            <div className="bg-green-100 border border-green-400 text-green-700 p-3 rounded-lg mb-4 flex items-center gap-2">
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
               >
-                <option value="all">All Time</option>
-                <option value="7days">Last 7 Days</option>
-                <option value="30days">Last 30 Days</option>
-              </select>
-              <button
-                onClick={() => unassignedOrders.length > 0 && assignDelivery(unassignedOrders[0]?._id)}
-                className={`flex items-center gap-2 bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg ${unassignedOrders.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
-                disabled={unassignedOrders.length === 0}
-              >
-                <FiPlus /> Assign Delivery
-              </button>
-            </div>
-          </div>
-          {unassignedOrders.length > 0 && (
-            <div className="mb-6">
-              <h2 className="text-lg font-semibold mb-2">New Orders to Assign</h2>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm bg-white border border-gray-200 rounded-lg">
-                  <thead className="bg-gray-100 text-gray-700">
-                    <tr>
-                      <th className="px-6 py-3 text-left font-semibold">Order ID</th>
-                      <th className="px-6 py-3 text-left font-semibold">Customer</th>
-                      <th className="px-6 py-3 text-left font-semibold">Address</th>
-                      <th className="px-6 py-3 text-left font-semibold">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {unassignedOrders.map((order) => (
-                      <tr key={order._id} className="hover:bg-gray-50 transition-all duration-200">
-                        <td className="px-6 py-4 font-medium">{getShortId(order._id)}</td>
-                        <td className="px-6 py-4">{order.name || 'Unknown Customer'}</td>
-                        <td className="px-6 py-4">{order.address || 'Not provided'}</td>
-                        <td className="px-6 py-4">
-                          <button
-                            onClick={() => assignDelivery(order._id)}
-                            className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 transition-all duration-200"
-                            disabled={!order._id}
-                          >
-                            Assign
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+              {success}
             </div>
           )}
-          {error && <div className="text-red-500 text-sm mb-4">{error}</div>}
-          {isLoading ? (
-            <div className="text-center text-gray-500 text-lg">Loading...</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm bg-white border border-gray-200 rounded-lg">
-                <thead className="bg-gray-100 text-gray-700">
-                  <tr>
-                    <th className="px-6 py-3 text-left font-semibold">Delivery ID</th>
-                    <th className="px-6 py-3 text-left font-semibold">Customer</th>
-                    <th className="px-6 py-3 text-left font-semibold">Address</th>
-                    <th className="px-6 py-3 text-left font-semibold">Assigned To</th>
-                    <th className="px-6 py-3 text-left font-semibold">Completed At</th>
-                    <th className="px-6 py-3 text-left font-semibold">Status</th>
-                    <th className="px-6 py-3 text-left font-semibold">Actions</th>
+
+          {/* Error Message */}
+          {error && (
+            <div className="bg-red-100 border border-red-400 text-red-700 p-3 rounded-lg mb-4 flex items-center gap-2">
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              {error}
+            </div>
+          )}
+
+          {/* Reports Section */}
+          {showReports && (
+            <ReportGenerating
+              deliveries={deliveries}
+              onClose={() => setShowReports(false)}
+            />
+          )}
+
+          {/* Add/Edit Form */}
+          {showForm && (
+            <div className="bg-gray-50 p-6 rounded-lg mb-6 border border-gray-200">
+              <h3 className="text-lg font-semibold mb-4 text-gray-800">
+                {editingDelivery ? 'Edit Delivery' : 'Add New Delivery'}
+              </h3>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <input
+                    type="text"
+                    name="deliveryId"
+                    placeholder="Delivery ID"
+                    value={formData.deliveryId}
+                    onChange={handleInputChange}
+                    className="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                  <input
+                    type="text"
+                    name="orderId"
+                    placeholder="Order ID"
+                    value={formData.orderId}
+                    onChange={handleInputChange}
+                    className="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                  <input
+                    type="text"
+                    name="customerName"
+                    placeholder="Customer Name"
+                    value={formData.customerName}
+                    onChange={handleInputChange}
+                    className="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                  <input
+                    type="text"
+                    name="address"
+                    placeholder="Delivery Address"
+                    value={formData.address}
+                    onChange={handleInputChange}
+                    className="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                  <input
+                    type="text"
+                    name="assignedTo"
+                    placeholder="Driver Name"
+                    value={formData.assignedTo}
+                    onChange={handleInputChange}
+                    className="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                  <input
+                    type="text"
+                    name="employeeNumber"
+                    placeholder="Driver Employee Number"
+                    value={formData.employeeNumber}
+                    onChange={handleInputChange}
+                    className="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                  <input
+                    type="date"
+                    name="orderDate"
+                    value={formData.orderDate}
+                    onChange={handleInputChange}
+                    className="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                  <select
+                    name="status"
+                    value={formData.status}
+                    onChange={handleInputChange}
+                    className="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="Pending">Pending</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Delivered">Delivered</option>
+                    <option value="Cancelled">Cancelled</option>
+                  </select>
+                </div>
+                <div className="flex gap-4">
+                  <button
+                    type="submit"
+                    className="bg-indigo-600 text-white px-3 py-1 rounded flex items-center gap-1 hover:bg-indigo-700 transition"
+                  >
+                    {editingDelivery ? 'Update' : 'Add'} Delivery
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowForm(false);
+                      resetForm();
+                    }}
+                    className="bg-gray-500 hover:bg-gray-600 text-white px-3 py-1 rounded"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Table */}
+          <div className="overflow-x-auto bg-white rounded-lg shadow">
+            <table className="min-w-full text-sm text-left">
+              <thead className="bg-gray-100 text-gray-600">
+                <tr>
+                  <th className="px-4 py-3">Delivery ID</th>
+                  <th className="px-4 py-3">Order ID</th>
+                  <th className="px-4 py-3">Customer</th>
+                  <th className="px-4 py-3">Address</th>
+                  <th className="px-4 py-3">Assigned To</th>
+                  <th className="px-4 py-3">Employee Number</th>
+                  <th className="px-4 py-3">Order Date</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {deliveries.map((delivery) => (
+                  <tr key={delivery._id}>
+                    <td className="px-4 py-2 font-medium">{delivery.deliveryId}</td>
+                    <td className="px-4 py-2">{delivery.orderId}</td>
+                    <td className="px-4 py-2">{delivery.customerName}</td>
+                    <td className="px-4 py-2">{delivery.address}</td>
+                    <td className="px-4 py-2">{delivery.driver?.name}</td>
+                    <td className="px-4 py-2">{delivery.driver?.employeeNumber}</td>
+                    <td className="px-4 py-2">{new Date(delivery.orderDate).toLocaleDateString()}</td>
+                    <td className="px-4 py-2">
+                      <select
+                        value={delivery.status}
+                        onChange={(e) => handleStatusChange(delivery._id, e.target.value)}
+                        className={`p-2 border rounded ${
+                          delivery.status === 'Pending'
+                            ? 'bg-red-100 text-red-700'
+                            : delivery.status === 'In Progress'
+                            ? 'bg-yellow-100 text-yellow-700'
+                            : delivery.status === 'Delivered'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-red-100 text-red-700'
+                        }`}
+                      >
+                        <option value="Pending">Pending</option>
+                        <option value="In Progress">In Progress</option>
+                        <option value="Delivered">Delivered</option>
+                        <option value="Cancelled">Cancelled</option>
+                      </select>
+                    </td>
+                    <td className="px-4 py-2 flex gap-2">
+                      <button
+                        onClick={() => handleEdit(delivery)}
+                        className="text-blue-600 hover:text-blue-800"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(delivery._id)}
+                        className="text-red-600 hover:text-red-800"
+                      >
+                        Delete
+                      </button>
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {filteredDeliveries.map((delivery) => (
-                    <tr key={delivery.deliveryId} className="hover:bg-gray-50 transition-all duration-200">
-                      <td className="px-6 py-4 font-medium">{delivery.deliveryId || 'N/A'}</td>
-                      <td className="px-6 py-4">{delivery.customer || 'Unknown Customer'}</td>
-                      <td className="px-6 py-4">{delivery.address || 'Not provided'}</td>
-                      <td className="px-6 py-4">
-                        <select
-                          className="p-1 border border-gray-200 rounded-lg text-sm transition-all"
-                          value={delivery.assignedTo || ''}
-                          onChange={(e) => handleDriverChange(delivery.deliveryId, e.target.value)}
-                          disabled={!delivery.deliveryId}
-                        >
-                          <option value="">Select Driver</option>
-                          {drivers.map((driver) => (
-                            <option key={driver} value={driver}>
-                              {driver}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-6 py-4">
-                        {delivery.completedAt ? new Date(delivery.completedAt).toLocaleString() : 'N/A'}
-                      </td>
-                      <td className="px-6 py-4">
-                        <select
-                          className="p-1 border border-gray-200 rounded-lg text-sm transition-all bg-white"
-                          value={delivery.status || 'Pending'}
-                          onChange={(e) => handleStatusChange(delivery.deliveryId, e.target.value)}
-                          disabled={!delivery.deliveryId}
-                        >
-                          <option value="Pending">Pending</option>
-                          <option value="In Progress">In Progress</option>
-                          <option value="Delivered">Delivered</option>
-                        </select>
-                        <div className="mt-1">{getStatusBadge(delivery.status)}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <button
-                          onClick={() => confirmDelete(delivery.deliveryId)}
-                          className="flex items-center gap-1 bg-red-500 text-white px-3 py-1.5 rounded-lg hover:bg-red-600 transition-all duration-200"
-                          disabled={!delivery.deliveryId}
-                        >
-                          <FiTrash2 /> Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                ))}
+                {deliveries.length === 0 && !loading && (
+                  <tr>
+                    <td className="px-4 py-4 text-gray-400" colSpan="9">
+                      No deliveries found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Quick Stats Footer */}
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mt-6 p-4 bg-gray-50 rounded-lg">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-gray-800">{deliveries.length}</div>
+              <div className="text-xs text-gray-500 uppercase">Total Deliveries</div>
             </div>
-          )}
-        </div>
-        {showDeleteConfirm && (
-          <div className="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg shadow-xl w-96">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Confirm Deletion</h2>
-              <p className="text-gray-600 mb-6">Are you sure you want to delete this delivery?</p>
-              <div className="flex justify-end gap-4">
-                <button
-                  onClick={cancelDelete}
-                  className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => deleteDelivery(deliveryToDelete)}
-                  className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-all"
-                  disabled={!deliveryToDelete}
-                >
-                  Delete
-                </button>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-yellow-500">
+                {deliveries.filter((d) => d.status === 'Pending').length}
               </div>
+              <div className="text-xs text-gray-500 uppercase">Pending</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-orange-500">
+                {deliveries.filter((d) => d.status === 'In Progress').length}
+              </div>
+              <div className="text-xs text-gray-500 uppercase">In Progress</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-green-500">
+                {deliveries.filter((d) => d.status === 'Delivered').length}
+              </div>
+              <div className="text-xs text-gray-500 uppercase">Delivered</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-red-500">
+                {deliveries.filter((d) => d.status === 'Cancelled').length}
+              </div>
+              <div className="text-xs text-gray-500 uppercase">Cancelled</div>
             </div>
           </div>
-        )}
+        </div>
       </main>
+
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 };
+
+const ReportGenerating = ({ deliveries, onClose }) => (
+  <div>
+    <h3>Delivery Report</h3>
+    {/* Add report generation logic here */}
+    <button onClick={onClose}>Close</button>
+  </div>
+);
 
 export default DeliveryManagement;

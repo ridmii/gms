@@ -16,6 +16,7 @@ import Salary from './models/Salary.js';
 import Inventory from './models/Inventory.js';
 import fastCsv from 'fast-csv';
 import employeeRoutes from './routes/employeeRoutes.js'; // Import employee routes
+import deliveryRoutes from './routes/deliveryRoutes.js';
 
 dotenv.config();
 
@@ -109,109 +110,9 @@ app.use('/uploads', express.static('uploads'));
 app.use('/api', employeeRoutes);
 
 // Delivery Routes
-app.get('/api/deliveries', authenticateAdmin, async (req, res) => {
-  try {
-    const deliveries = await Delivery.find()
-      .sort({ completedAt: -1 })
-      .populate('orderId', 'name address status');
-    res.json(deliveries);
-  } catch (err) {
-    console.error('Error fetching deliveries:', err);
-    res.status(500).json({ error: 'Failed to fetch deliveries', details: err.message });
-  }
-});
 
-app.get('/api/orders/unassigned', authenticateAdmin, async (req, res) => {
-  try {
-    const orders = await Order.find({ status: 'Pending' }).sort({ date: -1 });
-    res.json(orders);
-  } catch (err) {
-    console.error('Error fetching unassigned orders:', err);
-    res.status(500).json({ error: 'Failed to fetch unassigned orders', details: err.message });
-  }
-});
+app.use('/api/deliveries', deliveryRoutes);
 
-app.post('/api/deliveries', authenticateAdmin, async (req, res) => {
-  try {
-    const { orderId, customer, address, assignedTo, status } = req.body;
-    if (!orderId || !customer || !address) {
-      return res.status(400).json({ error: 'Order ID, customer, and address are required' });
-    }
-    const deliveryId = `DEL-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-    const delivery = new Delivery({
-      deliveryId,
-      orderId,
-      customer,
-      address,
-      assignedTo: assignedTo || '',
-      status: status || 'Pending',
-    });
-    const savedDelivery = await delivery.save();
-    await Order.findByIdAndUpdate(orderId, { status: 'In Progress' });
-    res.status(201).json(savedDelivery);
-    updateDashboardStats(); // Trigger SSE update
-  } catch (err) {
-    console.error('Error creating delivery:', err);
-    res.status(500).json({ error: 'Failed to create delivery', message: err.message });
-  }
-});
-
-app.put('/api/deliveries/:deliveryId/assign', authenticateAdmin, async (req, res) => {
-  try {
-    const { driverId, status } = req.body;
-    if (!driverId && !status) return res.status(400).json({ error: 'Driver ID or status is required' });
-    const delivery = await Delivery.findOneAndUpdate(
-      { deliveryId: req.params.deliveryId },
-      {
-        assignedTo: driverId || '',
-        status: status || 'Pending',
-        completedAt: status === 'Delivered' ? new Date() : undefined,
-      },
-      { new: true, runValidators: true }
-    );
-    if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
-    if (status === 'Delivered') {
-      await Order.findByIdAndUpdate(delivery.orderId, { status: 'Completed' });
-    }
-    res.json(delivery);
-    updateDashboardStats(); // Trigger SSE update
-  } catch (err) {
-    console.error('Error assigning driver:', err);
-    res.status(500).json({ error: 'Failed to assign driver', details: err.message });
-  }
-});
-
-app.put('/api/deliveries/:deliveryId/remove-driver', authenticateAdmin, async (req, res) => {
-  try {
-    const delivery = await Delivery.findOneAndUpdate(
-      { deliveryId: req.params.deliveryId },
-      { assignedTo: '', status: 'Pending' },
-      { new: true, runValidators: true }
-    );
-    if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
-    res.json(delivery);
-    updateDashboardStats(); // Trigger SSE update
-  } catch (err) {
-    console.error('Error removing driver:', err);
-    res.status(500).json({ error: 'Failed to remove driver', details: err.message });
-  }
-});
-
-app.delete('/api/deliveries/:deliveryId', authenticateAdmin, async (req, res) => {
-  try {
-    const { deliveryId } = req.params;
-    const deletedDelivery = await Delivery.findOneAndDelete({ deliveryId });
-    if (!deletedDelivery) {
-      return res.status(404).json({ message: 'Delivery not found' });
-    }
-    await Order.findByIdAndUpdate(deletedDelivery.orderId, { status: 'Pending' });
-    res.json({ message: 'Delivery deleted successfully' });
-    updateDashboardStats(); // Trigger SSE update
-  } catch (err) {
-    console.error('Error deleting delivery:', err);
-    res.status(500).json({ message: 'Failed to delete delivery: ' + err.message });
-  }
-});
 
 // Auto-create deliveries from pending orders on server start
 const initializeDeliveries = async () => {

@@ -16,50 +16,47 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const token = localStorage.getItem('adminToken');
-    if (!token) {
-      navigate('/admin/login');
-      return;
-    }
+useEffect(() => {
+  const token = localStorage.getItem('adminToken');
+  if (!token) {
+    navigate('/admin/login');
+    return;
+  }
 
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const [statsResponse, ordersResponse, inventoryResponse] = await Promise.all([
-          axios.get('http://localhost:5000/api/dashboard/stats', {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-          axios.get('http://localhost:5000/api/orders/admin', {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-          axios.get('http://localhost:5000/api/inventory', {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-        ]);
-        console.log('Dashboard Stats:', statsResponse.data);
-        console.log('Inventory Data:', inventoryResponse.data);
-        setDashboardStats({
-          totalOrders: statsResponse.data.totalOrders,
-          pendingDeliveries: statsResponse.data.pendingDeliveries,
-          monthlyIncome: statsResponse.data.monthlyIncome,
-        });
-        setRecentOrders(ordersResponse.data.slice(0, 5)); // Top 5 recent orders
-        setInventoryItems(inventoryResponse.data);
-        setError(null);
-      } catch (err) {
-        console.error('Fetch error:', err.response?.status, err.response?.data || err.message);
-        setError(`Failed to fetch data. Status: ${err.response?.status}. Message: ${err.response?.data?.message || err.message}.`);
-        if (err.response?.status === 401) {
-          localStorage.removeItem('adminToken');
-          navigate('/admin/login');
-        }
-      } finally {
-        setLoading(false);
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [statsResponse, ordersResponse, inventoryResponse] = await Promise.all([
+        axios.get('http://localhost:5000/api/dashboard/stats', {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        axios.get('http://localhost:5000/api/orders/admin', {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        axios.get('http://localhost:5000/api/inventory', {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+      setDashboardStats({
+        totalOrders: statsResponse.data.totalOrders,
+        pendingDeliveries: statsResponse.data.pendingDeliveries,
+        monthlyIncome: statsResponse.data.monthlyIncome,
+      });
+      setRecentOrders(ordersResponse.data.slice(0, 5));
+      setInventoryItems(inventoryResponse.data);
+      setError(null);
+    } catch (err) {
+      setError(`Failed to fetch data. Status: ${err.response?.status}. Message: ${err.response?.data?.message || err.message}.`);
+      if (err.response?.status === 401) {
+        localStorage.removeItem('adminToken');
+        navigate('/admin/login');
       }
-    };
-    fetchData();
-  }, [navigate]);
+    } finally {
+      setLoading(false);
+    }
+  };
+  fetchData();
+}, [navigate]);
 
   const handleLogout = () => {
     localStorage.removeItem('adminToken');
