@@ -97,9 +97,14 @@ async function createOrder(req, res) {
       date: new Date(),
     };
 
-    const newOrder = new Order(orderData);
+  const newOrder = new Order(orderData);
     const savedOrder = await newOrder.save();
     console.log('Order saved successfully:', savedOrder);
+
+    // Trigger delivery creation
+    const { initializeDeliveries } = await import('../server.js'); // Dynamic import
+    await initializeDeliveries();
+
     res.status(201).json({
       success: true,
       message: 'Order saved successfully!',

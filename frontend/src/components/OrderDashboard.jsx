@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useRef, Component } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import AdminSidebar from './AdminSidebar';
 import { FiSearch, FiLogOut, FiPlus } from 'react-icons/fi';
 
-// Error Boundary Component
-class ErrorBoundary extends Component {
+// ---------- Error Boundary ----------
+class ErrorBoundary extends React.Component {
   state = { hasError: false, error: null };
 
   static getDerivedStateFromError(error) {
@@ -19,7 +19,7 @@ class ErrorBoundary extends Component {
         <div className="min-h-screen flex items-center justify-center bg-gray-100 font-inter">
           <div className="text-center">
             <h1 className="text-2xl font-bold text-red-600">Something went wrong</h1>
-            <p className="text-gray-500 mt-2">Error: {this.state.error.message}</p>
+            <p className="text-gray-500 mt-2">Error: {this.state.error?.message || 'Unexpected error'}</p>
             <button
               onClick={() => window.location.reload()}
               className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition duration-300"
@@ -34,12 +34,19 @@ class ErrorBoundary extends Component {
   }
 }
 
+// ---------- Small helpers ----------
+const formatOrderId = (id) => (id ? `ORD-${id.slice(-8)}` : '—');
+const cardClass =
+  'rounded-2xl border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow';
+
+// ---------- Main Component ----------
 const OrderDashboard = () => {
   const [orders, setOrders] = useState([]);
   const [filteredOrders, setFilteredOrders] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [timeFilter, setTimeFilter] = useState('all');
   const [editOrder, setEditOrder] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -48,49 +55,74 @@ const OrderDashboard = () => {
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
 
-useEffect(() => {
-  const token = localStorage.getItem('adminToken');
-  if (!token) {
-    navigate('/admin/login');
-    return;
-  }
+  // New order state
+  const [newOrder, setNewOrder] = useState({
+    name: '',
+    email: '',
+    mobile: '',
+    address: '',
+    material: 'Cotton',
+    quantity: 30,
+    artworkFile: null,
+    artworkText: '',
+    needsArtwork: false,
+  });
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const ordersResponse = await axios.get('http://localhost:5000/api/orders/admin', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setOrders(ordersResponse.data || []);
-      setFilteredOrders(ordersResponse.data || []);
-      setError(null);
-    } catch (err) {
-      console.error('Fetch error:', err);
-      setError('Failed to fetch orders. Please log in again.');
-      localStorage.removeItem('adminToken');
+  // ---------- Auth + Polling ----------
+  useEffect(() => {
+    const token = localStorage.getItem('adminToken');
+    if (!token) {
       navigate('/admin/login');
-    } finally {
-      setLoading(false);
+      return;
     }
-  };
 
-  fetchData();
-  const interval = setInterval(fetchData, 5000); // Poll every 5 seconds
-  return () => clearInterval(interval); // Cleanup on unmount
-}, [navigate]);
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const ordersResponse = await axios.get('http://localhost:5000/api/orders/admin', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = Array.isArray(ordersResponse.data) ? ordersResponse.data : [];
+        // sort newest first by date
+        data.sort((a, b) => new Date(b.date) - new Date(a.date));
+        setOrders(data);
+        setFilteredOrders(data);
+        setError(null);
+      } catch (err) {
+        console.error('Fetch error:', err);
+        setError('Failed to fetch orders. Please log in again.');
+        localStorage.removeItem('adminToken');
+        navigate('/admin/login');
+      } finally {
+        setLoading(false);
+      }
+    };
 
+    fetchData();
+    const interval = setInterval(fetchData, 5000); // Poll every 5 seconds
+    return () => clearInterval(interval);
+  }, [navigate]);
+
+  // ---------- Debounce search ----------
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery.trim().toLowerCase()), 250);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  // ---------- Filter & Search ----------
   useEffect(() => {
     let filtered = orders || [];
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = (orders || []).filter(
-        (order) =>
-          order._id?.slice(-8).toLowerCase().includes(query) ||
-          order.name?.toLowerCase().includes(query) || // Updated from factoryName
-          order.email?.toLowerCase().includes(query) ||
-          order.mobile?.toLowerCase().includes(query)
-      );
+
+    if (debouncedQuery) {
+      filtered = filtered.filter((order) => {
+        const idMatch = order._id?.slice(-8).toLowerCase().includes(debouncedQuery);
+        const nameMatch = order.name?.toLowerCase().includes(debouncedQuery);
+        const emailMatch = order.email?.toLowerCase().includes(debouncedQuery);
+        const mobileMatch = order.mobile?.toLowerCase().includes(debouncedQuery);
+        return idMatch || nameMatch || emailMatch || mobileMatch;
+      });
     }
+
     if (timeFilter !== 'all') {
       const now = new Date();
       const cutoff = new Date();
@@ -98,9 +130,11 @@ useEffect(() => {
       else if (timeFilter === '30days') cutoff.setDate(now.getDate() - 30);
       filtered = filtered.filter((order) => new Date(order.date) >= cutoff);
     }
-    setFilteredOrders(filtered);
-  }, [searchQuery, timeFilter, orders]);
 
+    setFilteredOrders(filtered);
+  }, [debouncedQuery, timeFilter, orders]);
+
+  // ---------- Actions ----------
   const handleDownload = async (orderId) => {
     try {
       const token = localStorage.getItem('adminToken');
@@ -136,32 +170,35 @@ useEffect(() => {
     }
 
     // Calculate priceDetails
-    const unitPrice = parseInt(editOrder.quantity) > 30 ? 1500 : 2000;
+    const qty = parseInt(editOrder.quantity, 10);
+    const unitPrice = qty > 30 ? 1500 : 2000;
     const artworkFee = editOrder.artwork ? 5000 : 0;
-    const subtotal = parseInt(editOrder.quantity) * unitPrice;
+    const subtotal = qty * unitPrice;
     const total = subtotal + artworkFee;
     const advance = Math.round(total * 0.5);
     const balance = total - advance;
     const priceDetails = JSON.stringify({ unitPrice, subtotal, artworkFee, total, advance, balance });
 
     const formDataToSend = new FormData();
-    formDataToSend.append('name', editOrder.name); // Changed from factoryName
+    formDataToSend.append('name', editOrder.name);
     formDataToSend.append('email', editOrder.email);
     formDataToSend.append('mobile', editOrder.mobile);
-    formDataToSend.append('address', editOrder.address || ''); // Ensure address is included
+    formDataToSend.append('address', editOrder.address || '');
     formDataToSend.append('material', editOrder.material);
     formDataToSend.append('quantity', editOrder.quantity);
     formDataToSend.append('artwork', editOrder.artwork);
     formDataToSend.append('artworkText', editOrder.artworkText || '');
-    formDataToSend.append('priceDetails', priceDetails); // Include priceDetails
+    formDataToSend.append('priceDetails', priceDetails);
     if (editOrder.artworkFile) formDataToSend.append('artworkFile', editOrder.artworkFile);
 
     try {
       const token = localStorage.getItem('adminToken');
-      console.log('Sending edit data:', Object.fromEntries(formDataToSend)); // Debug payload
-      const response = await axios.put(`http://localhost:5000/api/orders/${editOrder._id}`, formDataToSend, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
-      });
+      const response = await axios.put(
+        `http://localhost:5000/api/orders/${editOrder._id}`,
+        formDataToSend,
+        { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } }
+      );
+
       setOrders((prev) =>
         prev.map((order) => (order._id === editOrder._id ? { ...editOrder, ...response.data } : order))
       );
@@ -170,7 +207,7 @@ useEffect(() => {
       );
       setEditOrder(null);
       setToastMessage('Order updated successfully');
-      setTimeout(() => setToastMessage(null), 5000);
+      setTimeout(() => setToastMessage(null), 4000);
     } catch (err) {
       console.error('Edit Error:', err.response?.data);
       setError(`Failed to update order. ${err.response?.data?.message || 'Please check server logs.'}`);
@@ -187,7 +224,7 @@ useEffect(() => {
       setFilteredOrders((prev) => prev.filter((order) => order._id !== deleteConfirm));
       setDeleteConfirm(null);
       setToastMessage('Order deleted successfully');
-      setTimeout(() => setToastMessage(null), 5000);
+      setTimeout(() => setToastMessage(null), 4000);
     } catch (err) {
       setError('Failed to delete order.');
     }
@@ -202,7 +239,10 @@ useEffect(() => {
     const { name, value, type, checked, files } = e.target;
     setNewOrder((prev) => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : type === 'file' ? files[0] : value,
+      [name]:
+        type === 'checkbox' ? checked
+        : type === 'file' ? files[0]
+        : value,
     }));
   };
 
@@ -230,8 +270,30 @@ useEffect(() => {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
       });
       const newOrderData = response.data;
-      setOrders((prev) => [...prev, newOrderData]);
-      setFilteredOrders((prev) => [...prev, newOrderData]);
+
+      // Create a corresponding delivery entry
+      const deliveryData = {
+        deliveryId: `DEL-${newOrderData._id.slice(-8)}`,
+        orderId: newOrderData._id,
+        customerName: newOrderData.name,
+        customerEmail: newOrderData.email,
+        address: newOrderData.address || 'Not specified',
+        driver: {
+          employeeNumber: 'EMP001',
+          name: 'Default Driver',
+        },
+        assignedTo: 'Default Driver',
+        scheduledDate: new Date().toISOString(),
+        status: 'Pending',
+      };
+      console.log('Sending Delivery Data:', deliveryData);
+      const deliveryResponse = await axios.post('http://localhost:5000/api/deliveries', deliveryData, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+      console.log('Delivery Creation Response:', deliveryResponse.data);
+
+      setOrders((prev) => [newOrderData, ...prev]);
+      setFilteredOrders((prev) => [newOrderData, ...prev]);
       setNewOrderForm(false);
       setNewOrder({
         name: '',
@@ -246,24 +308,12 @@ useEffect(() => {
       });
       if (fileInputRef.current) fileInputRef.current.value = '';
       setToastMessage('New order created successfully');
-      setTimeout(() => setToastMessage(null), 5000);
+      setTimeout(() => setToastMessage(null), 4000);
     } catch (err) {
-      console.error('Create Error:', err.response?.data);
-      setError(`Failed to create order. ${err.response?.data?.message || 'Please check server logs.'}`);
+      console.error('Create Error:', err.response?.data || err.message);
+      setError(`Failed to create order or delivery. ${err.response?.data?.message || err.message}`);
     }
   };
-
-  const [newOrder, setNewOrder] = useState({
-    name: '',
-    email: '',
-    mobile: '',
-    address: '',
-    material: 'Cotton',
-    quantity: 30,
-    artworkFile: null,
-    artworkText: '',
-    needsArtwork: false,
-  });
 
   useEffect(() => {
     if (editOrder || newOrderForm || deleteConfirm) {
@@ -284,200 +334,251 @@ useEffect(() => {
     setFilteredOrders(updatedOrders);
   };
 
+  // ---------- Derived quick stats ----------
+  const totalOrders = filteredOrders.length;
+  const todayStr = new Date().toDateString();
+  const todayOrders = filteredOrders.filter((o) => new Date(o.date).toDateString() === todayStr).length;
+  const pendingOrders = filteredOrders.filter((o) => (o.status || 'Pending') === 'Pending').length;
+
   return (
     <ErrorBoundary>
-      <div className="min-h-screen flex bg-gray-100 font-inter animate-fadeIn">
+      <div className="min-h-screen flex bg-gray-50 font-inter">
         <AdminSidebar activePage="orders" />
 
         {/* Main Content */}
         <main className="ml-64 w-full p-6 transition-all duration-300 ease-in-out">
-          {/* Header Top Bar */}
-          <div className="flex justify-between items-center mb-6">
+          {/* Top header bar */}
+          <div className="flex justify-between items-start md:items-center mb-6">
             <div>
-              <h1 className="text-2xl font-bold text-gray-800">Order Dashboard</h1>
-              <p className="text-sm text-gray-500">Manage and track all orders</p>
+              <h1 className="text-3xl font-bold text-gray-900">Orders</h1>
+              <p className="text-sm text-gray-500">Manage and track all customer orders</p>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="text-sm font-medium text-gray-800">Admin User</p>
-                <p className="text-xs text-gray-500">admin@dimalsha.com</p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setNewOrderForm(true)}
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-700"
+              >
+                <FiPlus /> New Order
+              </button>
+              <div className="hidden md:block h-8 w-px bg-gray-200" />
+              <div className="hidden md:flex items-center gap-3">
+                <div className="text-right">
+                  <p className="text-sm font-medium text-gray-800">Admin User</p>
+                  <p className="text-xs text-gray-500">admin@dimalsha.com</p>
+                </div>
+                <div className="w-9 h-9 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">
+                  AU
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="rounded-lg border border-gray-200 bg-white p-2 text-gray-500 hover:text-red-600 hover:border-red-200"
+                  title="Log out"
+                >
+                  <FiLogOut size={18} />
+                </button>
               </div>
-              <div className="w-9 h-9 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">
-                AU
-              </div>
-              <FiLogOut
-                className="text-gray-500 hover:text-red-500 cursor-pointer"
-                size={18}
-                onClick={handleLogout}
-              />
             </div>
           </div>
 
-          {/* Search & Filter */}
-          <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition mb-6">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-4">
+          {/* Quick stats */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            <div className={`${cardClass} p-4`}>
+              <p className="text-xs uppercase tracking-wide text-gray-500">Total Orders</p>
+              <p className="mt-1 text-2xl font-semibold text-gray-900">{totalOrders}</p>
+            </div>
+            <div className={`${cardClass} p-4`}>
+              <p className="text-xs uppercase tracking-wide text-gray-500">Today</p>
+              <p className="mt-1 text-2xl font-semibold text-gray-900">{todayOrders}</p>
+            </div>
+            <div className={`${cardClass} p-4`}>
+              <p className="text-xs uppercase tracking-wide text-gray-500">Pending</p>
+              <p className="mt-1 text-2xl font-semibold text-gray-900">{pendingOrders}</p>
+            </div>
+          </div>
+
+          {/* Search & Filters */}
+          <div className={`${cardClass} p-4 mb-6`}>
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4">
               {/* Search */}
               <div className="relative w-full md:w-1/2">
-                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
-                </span>
                 <input
                   type="text"
                   placeholder="Search by order ID, factory name, email, or mobile..."
-                  className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
+                  className="pl-10 pr-4 py-2 w-full rounded-xl border border-gray-200 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
 
-              {/* Filter + Button */}
-              <div className="flex items-center gap-4">
+              {/* Time filter */}
+              <div className="flex items-center gap-3">
                 <select
                   value={timeFilter}
                   onChange={(e) => setTimeFilter(e.target.value)}
-                  className="p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 transition"
+                  className="rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
                   <option value="all">All Time</option>
                   <option value="7days">Last 7 Days</option>
                   <option value="30days">Last 30 Days</option>
-                </select>    
+                </select>
               </div>
             </div>
+          </div>
 
-            {/* Order Table */}
-            {error && <div className="text-red-500">{error}</div>}
-            {loading ? (
-              <div className="text-center text-gray-500">Loading...</div>
-            ) : filteredOrders.length === 0 ? (
-              <div className="text-center text-gray-500">No orders found.</div>
-            ) : (
-              <div className="overflow-x-auto transition">
-                <table className="min-w-full text-sm bg-white border border-gray-200 rounded-md">
-                  <thead className="bg-gray-100 text-gray-600 text-left">
+          {/* Errors */}
+          {error && (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              {error}
+            </div>
+          )}
+
+          {/* Orders Table */}
+          <div className={`${cardClass} overflow-hidden`}>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="sticky top-0 bg-gray-100/70 backdrop-blur text-gray-600">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold">Order</th>
+                    <th className="px-4 py-3 text-left font-semibold">Factory Name</th>
+                    <th className="px-4 py-3 text-left font-semibold">Email</th>
+                    <th className="px-4 py-3 text-left font-semibold">Mobile</th>
+                    <th className="px-4 py-3 text-left font-semibold">Product</th>
+                    <th className="px-4 py-3 text-left font-semibold">Qty</th>
+                    <th className="px-4 py-3 text-left font-semibold">Date</th>
+                    <th className="px-4 py-3 text-left font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {loading && (
+                    <>
+                      {[...Array(6)].map((_, i) => (
+                        <tr key={`skeleton-${i}`} className="animate-pulse">
+                          <td className="px-4 py-3"><div className="h-4 w-24 bg-gray-200 rounded" /></td>
+                          <td className="px-4 py-3"><div className="h-4 w-32 bg-gray-200 rounded" /></td>
+                          <td className="px-4 py-3"><div className="h-4 w-40 bg-gray-200 rounded" /></td>
+                          <td className="px-4 py-3"><div className="h-4 w-24 bg-gray-200 rounded" /></td>
+                          <td className="px-4 py-3"><div className="h-4 w-20 bg-gray-200 rounded" /></td>
+                          <td className="px-4 py-3"><div className="h-4 w-10 bg-gray-200 rounded" /></td>
+                          <td className="px-4 py-3"><div className="h-4 w-24 bg-gray-200 rounded" /></td>
+                          <td className="px-4 py-3"><div className="h-8 w-36 bg-gray-200 rounded" /></td>
+                        </tr>
+                      ))}
+                    </>
+                  )}
+
+                  {!loading && filteredOrders.length === 0 && (
                     <tr>
-                      <th className="px-4 py-3 font-semibold">Order ID</th>
-                      <th className="px-4 py-3 font-semibold">Factory Name</th>
-                      <th className="px-4 py-3 font-semibold">Email</th>
-                      <th className="px-4 py-3 font-semibold">Mobile</th>
-                      <th className="px-4 py-3 font-semibold">Product</th>
-                      <th className="px-4 py-3 font-semibold">Quantity</th>
-                      <th className="px-4 py-3 font-semibold">Date</th>
-                      <th className="px-4 py-3 font-semibold">Actions</th>
+                      <td colSpan={8} className="px-4 py-10 text-center text-gray-500">
+                        No orders found. Try adjusting your search or date filter.
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {filteredOrders.map((order) => (
-                      <tr key={order._id} className="hover:bg-gray-50 transition-all">
-                        <td className="px-4 py-3 font-medium">ORD-{order._id.slice(-8)}</td>
-                        <td className="px-4 py-3">{order.name || 'N/A'}</td>
-                        <td className="px-4 py-3">{order.email || 'N/A'}</td>
-                        <td className="px-4 py-3">{order.mobile || 'N/A'}</td>
-                        <td className="px-4 py-3">{order.material || 'N/A'}</td>
-                        <td className="px-4 py-3">{order.quantity || 'N/A'}</td>
-                        <td className="px-4 py-3">{new Date(order.date).toLocaleDateString()}</td>
-                        <td className="px-4 py-3 flex gap-2">
-                          <button
-                            onClick={() => handleDownload(order._id)}
-                            className="bg-blue-500 text-white px-3 py-1 rounded-lg hover:bg-blue-600 transition duration-300"
-                          >
-                            Invoice
-                          </button>
-                          <button
-                            onClick={() => handleEdit(order)}
-                            className="bg-green-500 text-white px-3 py-1 rounded-lg hover:bg-green-600 transition duration-300"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => setDeleteConfirm(order._id)}
-                            className="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600 transition duration-300"
-                          >
-                            Delete
-                          </button>
+                  )}
+
+                  {!loading &&
+                    filteredOrders.map((order) => (
+                      <tr key={order._id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium text-gray-900">
+                          {formatOrderId(order._id)}
+                        </td>
+                        <td className="px-4 py-3 text-gray-700">{order.name || 'N/A'}</td>
+                        <td className="px-4 py-3 text-gray-700">{order.email || 'N/A'}</td>
+                        <td className="px-4 py-3 text-gray-700">{order.mobile || 'N/A'}</td>
+                        <td className="px-4 py-3 text-gray-700">{order.material || 'N/A'}</td>
+                        <td className="px-4 py-3 text-gray-700">{order.quantity || 'N/A'}</td>
+                        <td className="px-4 py-3 text-gray-700">
+                          {order.date ? new Date(order.date).toLocaleDateString() : '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              onClick={() => handleDownload(order._id)}
+                              className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-blue-700 border border-blue-200 hover:bg-blue-50"
+                            >
+                              Invoice
+                            </button>
+                            <button
+                              onClick={() => handleEdit(order)}
+                              className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-green-700 border border-green-200 hover:bg-green-50"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => setDeleteConfirm(order._id)}
+                              className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-red-700 border border-red-200 hover:bg-red-50"
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                </tbody>
+              </table>
+            </div>
           </div>
 
+          {/* --------- Modals & Toasts --------- */}
           <AnimatePresence>
+            {/* Edit Modal */}
             {editOrder && (
               <motion.div
-                className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+                className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={() => setEditOrder(null)}
               >
                 <motion.div
-                  className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto"
-                  initial={{ scale: 0.9, y: 50 }}
+                  className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto"
+                  initial={{ scale: 0.96, y: 12 }}
                   animate={{ scale: 1, y: 0 }}
-                  exit={{ scale: 0.9, y: 50 }}
-                  transition={{ type: 'spring', damping: 15, stiffness: 100 }}
+                  exit={{ scale: 0.96, y: 12 }}
+                  transition={{ type: 'spring', damping: 20, stiffness: 200 }}
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <h2 className="text-2xl font-bold text-gray-800 mb-6">Edit Order</h2>
-                  <form onSubmit={handleSaveEdit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="form-group">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Factory Name *
-                      </label>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-6">Edit Order</h2>
+                  <form onSubmit={handleSaveEdit} className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div>
+                      <label className="text-sm text-gray-600">Factory Name *</label>
                       <input
                         type="text"
-                        name="name" // Changed from factoryName
+                        name="name"
                         value={editOrder.name || ''}
-                        onChange={(e) =>
-                          setEditOrder((prev) => ({ ...prev, name: e.target.value }))
-                        }
+                        onChange={(e) => setEditOrder((prev) => ({ ...prev, name: e.target.value }))}
                         required
-                        className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       />
                     </div>
-                    <div className="form-group">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Email Address *
-                      </label>
+                    <div>
+                      <label className="text-sm text-gray-600">Email Address *</label>
                       <input
                         type="email"
                         name="email"
                         value={editOrder.email || ''}
-                        onChange={(e) =>
-                          setEditOrder((prev) => ({ ...prev, email: e.target.value }))
-                        }
+                        onChange={(e) => setEditOrder((prev) => ({ ...prev, email: e.target.value }))}
                         required
-                        className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       />
                     </div>
-                    <div className="form-group">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Mobile Number *
-                      </label>
+                    <div>
+                      <label className="text-sm text-gray-600">Mobile Number *</label>
                       <input
                         type="tel"
                         name="mobile"
                         value={editOrder.mobile || ''}
-                        onChange={(e) =>
-                          setEditOrder((prev) => ({ ...prev, mobile: e.target.value }))
-                        }
+                        onChange={(e) => setEditOrder((prev) => ({ ...prev, mobile: e.target.value }))}
                         required
-                        className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       />
                     </div>
-                    <div className="form-group">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Material *
-                      </label>
+                    <div>
+                      <label className="text-sm text-gray-600">Material *</label>
                       <select
                         name="material"
                         value={editOrder.material || 'Cotton'}
-                        onChange={(e) =>
-                          setEditOrder((prev) => ({ ...prev, material: e.target.value }))
-                        }
+                        onChange={(e) => setEditOrder((prev) => ({ ...prev, material: e.target.value }))}
                         required
-                        className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       >
                         <option value="Cotton">Cotton</option>
                         <option value="Polyester">Polyester</option>
@@ -486,218 +587,189 @@ useEffect(() => {
                         <option value="Other">Other</option>
                       </select>
                     </div>
-                    <div className="form-group">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Quantity *
-                      </label>
+                    <div>
+                      <label className="text-sm text-gray-600">Quantity *</label>
                       <input
                         type="number"
                         name="quantity"
                         min="1"
                         value={editOrder.quantity || 30}
-                        onChange={(e) =>
-                          setEditOrder((prev) => ({ ...prev, quantity: e.target.value }))
-                        }
+                        onChange={(e) => setEditOrder((prev) => ({ ...prev, quantity: e.target.value }))}
                         required
-                        className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       />
                     </div>
-                    <div className="form-group col-span-2">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          id="artwork"
-                          name="artwork"
-                          checked={editOrder.artwork || false}
-                          onChange={(e) =>
-                            setEditOrder((prev) => ({
-                              ...prev,
-                              artwork: e.target.checked,
-                            }))
-                          }
-                          className="h-4 w-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
-                        />
-                        <label
-                          htmlFor="artwork"
-                          className="text-sm font-medium text-gray-700"
-                        >
-                          Include custom artwork (+LKR 5,000)
-                        </label>
-                      </div>
+
+                    {/* Artwork toggle */}
+                    <div className="md:col-span-2 flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="editArtwork"
+                        name="artwork"
+                        checked={!!editOrder.artwork}
+                        onChange={(e) => setEditOrder((prev) => ({ ...prev, artwork: e.target.checked }))}
+                        className="h-4 w-4 text-indigo-600 focus:ring-2 focus:ring-indigo-500"
+                      />
+                      <label htmlFor="editArtwork" className="text-sm text-gray-700">
+                        Include custom artwork (+LKR 5,000)
+                      </label>
                     </div>
+
                     {editOrder.artwork && (
                       <>
-                        <div className="form-group">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Upload Artwork File
-                          </label>
+                        <div>
+                          <label className="text-sm text-gray-600">Upload Artwork File</label>
                           <input
                             type="file"
                             ref={fileInputRef}
                             onChange={(e) =>
-                              setEditOrder((prev) => ({
-                                ...prev,
-                                artworkFile: e.target.files[0],
-                              }))
+                              setEditOrder((prev) => ({ ...prev, artworkFile: e.target.files[0] }))
                             }
                             accept="image/*,.pdf,.ai,.eps"
-                            className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                           />
                         </div>
-                        <div className="form-group col-span-2">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Artwork Description
-                          </label>
+                        <div className="md:col-span-2">
+                          <label className="text-sm text-gray-600">Artwork Description</label>
                           <textarea
                             name="artworkText"
                             value={editOrder.artworkText || ''}
-                            onChange={(e) =>
-                              setEditOrder((prev) => ({
-                                ...prev,
-                                artworkText: e.target.value,
-                              }))
-                            }
+                            onChange={(e) => setEditOrder((prev) => ({ ...prev, artworkText: e.target.value }))}
                             placeholder="Describe your artwork requirements..."
-                            className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 h-24"
+                            className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 h-24"
                           />
                         </div>
                       </>
                     )}
-                    <div className="form-group col-span-2 flex justify-end gap-4 mt-6">
-                      <button
-                        type="submit"
-                        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition duration-300"
-                      >
-                        Save
-                      </button>
+
+                    <div className="md:col-span-2 flex justify-end gap-3 pt-2">
                       <button
                         type="button"
                         onClick={() => setEditOrder(null)}
-                        className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition duration-300"
+                        className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50"
                       >
                         Back
+                      </button>
+                      <button
+                        type="submit"
+                        className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                      >
+                        Save
                       </button>
                     </div>
                   </form>
                 </motion.div>
               </motion.div>
             )}
+
+            {/* Delete Confirm */}
             {deleteConfirm && (
               <motion.div
-                className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+                className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
               >
                 <motion.div
-                  className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md"
-                  initial={{ scale: 0.9, y: 50 }}
+                  className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md"
+                  initial={{ scale: 0.96, y: 12 }}
                   animate={{ scale: 1, y: 0 }}
-                  exit={{ scale: 0.9, y: 50 }}
-                  transition={{ type: 'spring', damping: 15, stiffness: 100 }}
+                  exit={{ scale: 0.96, y: 12 }}
+                  transition={{ type: 'spring', damping: 20, stiffness: 200 }}
                 >
-                  <h2 className="text-2xl font-bold text-gray-800 mb-4">Confirm Deletion</h2>
-                  <p className="mb-6 text-gray-600">Are you sure you want to delete this order?</p>
-                  <div className="flex justify-end gap-4">
-                    <button
-                      onClick={handleDelete}
-                      className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition duration-300"
-                    >
-                      Delete
-                    </button>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">Delete order?</h2>
+                  <p className="mb-6 text-gray-600">
+                    This action cannot be undone.
+                  </p>
+                  <div className="flex justify-end gap-3">
                     <button
                       onClick={() => setDeleteConfirm(null)}
-                      className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition duration-300"
+                      className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50"
                     >
                       Cancel
+                    </button>
+                    <button
+                      onClick={handleDelete}
+                      className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                    >
+                      Delete
                     </button>
                   </div>
                 </motion.div>
               </motion.div>
             )}
+
+            {/* New Order */}
             {newOrderForm && (
               <motion.div
-                className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+                className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={() => setNewOrderForm(false)}
               >
                 <motion.div
-                  className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto"
-                  initial={{ scale: 0.9, y: 50 }}
+                  className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto"
+                  initial={{ scale: 0.96, y: 12 }}
                   animate={{ scale: 1, y: 0 }}
-                  exit={{ scale: 0.9, y: 50 }}
-                  transition={{ type: 'spring', damping: 15, stiffness: 100 }}
+                  exit={{ scale: 0.96, y: 12 }}
+                  transition={{ type: 'spring', damping: 20, stiffness: 200 }}
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <h2 className="text-2xl font-bold text-gray-800 mb-6">New Order</h2>
-                  <form
-                    onSubmit={handleNewOrderSubmit}
-                    className="grid grid-cols-1 md:grid-cols-2 gap-6"
-                  >
-                    <div className="form-group">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Factory Name *
-                      </label>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-6">New Order</h2>
+                  <form onSubmit={handleNewOrderSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div>
+                      <label className="text-sm text-gray-600">Factory Name *</label>
                       <input
                         type="text"
                         name="name"
                         value={newOrder.name}
                         onChange={handleNewOrderChange}
                         required
-                        className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       />
                     </div>
-                    <div className="form-group">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Email Address *
-                      </label>
+                    <div>
+                      <label className="text-sm text-gray-600">Email Address *</label>
                       <input
                         type="email"
                         name="email"
                         value={newOrder.email}
                         onChange={handleNewOrderChange}
                         required
-                        className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       />
                     </div>
-                    <div className="form-group">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Mobile Number *
-                      </label>
+                    <div>
+                      <label className="text-sm text-gray-600">Mobile Number *</label>
                       <input
                         type="tel"
                         name="mobile"
                         value={newOrder.mobile}
                         onChange={handleNewOrderChange}
                         required
-                        className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       />
                     </div>
-                    <div className="form-group">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Address *
-                      </label>
+                    <div>
+                      <label className="text-sm text-gray-600">Address *</label>
                       <input
                         type="text"
                         name="address"
                         value={newOrder.address}
                         onChange={handleNewOrderChange}
                         required
-                        className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       />
                     </div>
-                    <div className="form-group">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Material *
-                      </label>
+                    <div>
+                      <label className="text-sm text-gray-600">Material *</label>
                       <select
                         name="material"
                         value={newOrder.material}
                         onChange={handleNewOrderChange}
                         required
-                        className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       >
                         <option value="Cotton">Cotton</option>
                         <option value="Polyester">Polyester</option>
@@ -706,10 +778,8 @@ useEffect(() => {
                         <option value="Other">Other</option>
                       </select>
                     </div>
-                    <div className="form-group">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Quantity *
-                      </label>
+                    <div>
+                      <label className="text-sm text-gray-600">Quantity *</label>
                       <input
                         type="number"
                         name="quantity"
@@ -717,81 +787,79 @@ useEffect(() => {
                         value={newOrder.quantity}
                         onChange={handleNewOrderChange}
                         required
-                        className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       />
                     </div>
-                    <div className="form-group col-span-2">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          id="artwork"
-                          name="artwork"
-                          checked={newOrder.needsArtwork}
-                          onChange={handleNewOrderChange}
-                          className="h-4 w-4 text-blue-600 focus:ring-2 focus:ring-blue-500"
-                        />
-                        <label
-                          htmlFor="artwork"
-                          className="text-sm font-medium text-gray-700"
-                        >
-                          Include custom artwork (+LKR 5,000)
-                        </label>
-                      </div>
+
+                    {/* Artwork toggle */}
+                    <div className="md:col-span-2 flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="newArtwork"
+                        name="needsArtwork"
+                        checked={newOrder.needsArtwork}
+                        onChange={handleNewOrderChange}
+                        className="h-4 w-4 text-indigo-600 focus:ring-2 focus:ring-indigo-500"
+                      />
+                      <label htmlFor="newArtwork" className="text-sm text-gray-700">
+                        Include custom artwork (+LKR 5,000)
+                      </label>
                     </div>
+
                     {newOrder.needsArtwork && (
                       <>
-                        <div className="form-group">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Upload Artwork File
-                          </label>
+                        <div>
+                          <label className="text-sm text-gray-600">Upload Artwork File</label>
                           <input
                             type="file"
+                            name="artworkFile"
                             ref={fileInputRef}
                             onChange={handleNewOrderChange}
                             accept="image/*,.pdf,.ai,.eps"
-                            className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                           />
                         </div>
-                        <div className="form-group col-span-2">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Artwork Description
-                          </label>
+                        <div className="md:col-span-2">
+                          <label className="text-sm text-gray-600">Artwork Description</label>
                           <textarea
                             name="artworkText"
                             value={newOrder.artworkText}
                             onChange={handleNewOrderChange}
                             placeholder="Describe your artwork requirements..."
-                            className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 h-24"
+                            className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 h-24"
                           />
                         </div>
                       </>
                     )}
-                    <div className="form-group col-span-2 flex justify-end gap-4 mt-6">
-                      <button
-                        type="submit"
-                        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition duration-300"
-                      >
-                        Create
-                      </button>
+
+                    <div className="md:col-span-2 flex justify-end gap-3 pt-2">
                       <button
                         type="button"
                         onClick={() => setNewOrderForm(false)}
-                        className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition duration-300"
+                        className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50"
                       >
                         Back
+                      </button>
+                      <button
+                        type="submit"
+                        className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                      >
+                        Create
                       </button>
                     </div>
                   </form>
                 </motion.div>
               </motion.div>
             )}
+
+            {/* Toast */}
             {toastMessage && (
               <motion.div
-                className="fixed bottom-6 right-6 bg-green-500 text-white p-3 rounded-lg shadow-lg"
+                className="fixed bottom-6 right-6 rounded-xl bg-green-600 text-white px-4 py-3 shadow-lg"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 20 }}
-                transition={{ duration: 0.3 }}
+                transition={{ duration: 0.25 }}
               >
                 {toastMessage}
               </motion.div>

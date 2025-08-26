@@ -13,12 +13,11 @@ const Inventory = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [showStockTakingConfirm, setShowStockTakingConfirm] = useState(false);
-  const [newItem, setNewItem] = useState({ id: '', item: '', type: 'Fabric', quantity: '', unit: 'meters', threshold: '' });
-  const [editItem, setEditItem] = useState({ id: '', item: '', type: 'Fabric', quantity: '', unit: 'meters', threshold: '' });
+  const [newItem, setNewItem] = useState({ id: '', item: '', type: 'Fabric', quantity: '', unit: 'meters', threshold: '', price: '' });
+  const [editItem, setEditItem] = useState({ id: '', item: '', type: 'Fabric', quantity: '', unit: 'meters', threshold: '', price: '' });
   const [itemToDelete, setItemToDelete] = useState(null);
   const token = localStorage.getItem('adminToken') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImFkbWluQGRpbWFsc2hhLmNvbSIsImlhdCI6MTc1Mzg4NDIxMiwiZXhwIjoxNzUzOTcwNjEyfQ.Gvw3zPSHoB43FRFdwfWTD7_mBzPcJ9uFhjfdskZXnkI';
 
-  // Mapping of type to default unit
   const typeToUnitMap = {
     Fabric: 'meters',
     Thread: 'meters',
@@ -38,7 +37,12 @@ const Inventory = () => {
           const numB = parseInt(b.id.split('-')[1] || 0);
           return numA - numB;
         });
-        setInventoryItems(sortedItems);
+        // Ensure price is defined, default to 0 if missing
+        const updatedItems = sortedItems.map(item => ({
+          ...item,
+          price: item.price || 0,
+        }));
+        setInventoryItems(updatedItems);
       } catch (err) {
         setError('Failed to load inventory.');
       } finally {
@@ -48,7 +52,6 @@ const Inventory = () => {
     fetchInventory();
   }, [token]);
 
-  // Handle type change for new item
   const handleNewItemTypeChange = (e) => {
     const selectedType = e.target.value;
     setNewItem((prev) => ({
@@ -58,7 +61,6 @@ const Inventory = () => {
     }));
   };
 
-  // Handle type change for edit item
   const handleEditItemTypeChange = (e) => {
     const selectedType = e.target.value;
     setEditItem((prev) => ({
@@ -78,12 +80,13 @@ const Inventory = () => {
         quantity: Number(newItem.quantity),
         unit: newItem.unit,
         threshold: Number(newItem.threshold),
+        price: Number(newItem.price) || 0, // Default to 0 if not provided
       };
       const res = await axios.post('http://localhost:5000/api/inventory', payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setInventoryItems((prev) => {
-        const updated = [...prev, res.data].sort((a, b) => {
+        const updated = [...prev, { ...res.data, price: res.data.price || 0 }].sort((a, b) => {
           const numA = parseInt(a.id.split('-')[1] || 0);
           const numB = parseInt(b.id.split('-')[1] || 0);
           return numA - numB;
@@ -91,7 +94,7 @@ const Inventory = () => {
         return updated;
       });
       setShowAddForm(false);
-      setNewItem({ id: '', item: '', type: 'Fabric', quantity: '', unit: 'meters', threshold: '' });
+      setNewItem({ id: '', item: '', type: 'Fabric', quantity: '', unit: 'meters', threshold: '', price: '' });
     } catch (err) {
       setError(`Failed to add item: ${err.response?.data?.message || err.message}`);
     }
@@ -106,12 +109,13 @@ const Inventory = () => {
         quantity: Number(editItem.quantity),
         unit: editItem.unit,
         threshold: Number(editItem.threshold),
+        price: Number(editItem.price) || 0, // Default to 0 if not provided
       };
       const res = await axios.put(`http://localhost:5000/api/inventory/${editItem.id}`, payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setInventoryItems((prev) => {
-        const updated = prev.map((item) => (item.id === editItem.id ? res.data : item)).sort((a, b) => {
+        const updated = prev.map((item) => (item.id === editItem.id ? { ...res.data, price: res.data.price || 0 } : item)).sort((a, b) => {
           const numA = parseInt(a.id.split('-')[1] || 0);
           const numB = parseInt(b.id.split('-')[1] || 0);
           return numA - numB;
@@ -166,7 +170,12 @@ const Inventory = () => {
         const numB = parseInt(b.id.split('-')[1] || 0);
         return numA - numB;
       });
-      setInventoryItems(sortedItems);
+      // Ensure price is defined, default to 0 if missing
+      const updatedItems = sortedItems.map(item => ({
+        ...item,
+        price: item.price || 0,
+      }));
+      setInventoryItems(updatedItems);
       setShowStockTakingConfirm(false);
       setShowSuccessToast(true);
       setTimeout(() => setShowSuccessToast(false), 3000);
@@ -192,6 +201,9 @@ const Inventory = () => {
       <span className={`${base} bg-green-100 text-green-800`}>High</span>
     );
   };
+
+  // Calculate total price with fallback for undefined price
+  const totalPrice = inventoryItems.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 0), 0);
 
   return (
     <div className="min-h-screen flex bg-gray-50 font-poppins text-gray-800">
@@ -223,7 +235,7 @@ const Inventory = () => {
               <input
                 type="text"
                 placeholder="Search by item or ID"
-                className="pl-4 pr-4 py-2 w-full border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                className="pl-10 pr-4 py-2 w-full border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -247,7 +259,7 @@ const Inventory = () => {
 
           {showAddForm && (
             <form onSubmit={handleAddItem} className="mb-6 p-6 bg-gray-50 rounded-xl shadow-inner">
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                 <input
                   className="border border-gray-200 px-3 py-2 rounded-lg"
                   placeholder="ID (optional)"
@@ -295,6 +307,14 @@ const Inventory = () => {
                   onChange={(e) => setNewItem({ ...newItem, threshold: e.target.value })}
                   required
                 />
+                <input
+                  type="number"
+                  className="border border-gray-200 px-3 py-2 rounded-lg"
+                  placeholder="Price per Unit (LKR)"
+                  value={newItem.price}
+                  onChange={(e) => setNewItem({ ...newItem, price: e.target.value })}
+                  required
+                />
               </div>
               <div className="mt-4 flex justify-end gap-4">
                 <button type="submit" className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-all">
@@ -309,7 +329,7 @@ const Inventory = () => {
 
           {showEditForm && (
             <form onSubmit={handleUpdateItem} className="mb-6 p-6 bg-gray-50 rounded-xl shadow-inner">
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                 <input
                   className="border border-gray-200 px-3 py-2 rounded-lg bg-gray-100"
                   value={editItem.id}
@@ -354,6 +374,14 @@ const Inventory = () => {
                   placeholder="Threshold"
                   value={editItem.threshold}
                   onChange={(e) => setEditItem({ ...editItem, threshold: e.target.value })}
+                  required
+                />
+                <input
+                  type="number"
+                  className="border border-gray-200 px-3 py-2 rounded-lg"
+                  placeholder="Price per Unit (LKR)"
+                  value={editItem.price}
+                  onChange={(e) => setEditItem({ ...editItem, price: e.target.value })}
                   required
                 />
               </div>
@@ -439,6 +467,8 @@ const Inventory = () => {
                     <th className="px-6 py-3 text-left font-semibold">Quantity</th>
                     <th className="px-6 py-3 text-left font-semibold">Unit</th>
                     <th className="px-6 py-3 text-left font-semibold">Threshold</th>
+                    <th className="px-6 py-3 text-left font-semibold">Price per Unit (LKR)</th>
+                    <th className="px-6 py-3 text-left font-semibold">Total Price (LKR)</th>
                     <th className="px-6 py-3 text-left font-semibold">Last Updated</th>
                     <th className="px-6 py-3 text-left font-semibold">Status</th>
                     <th className="px-6 py-3 text-left font-semibold">Actions</th>
@@ -453,6 +483,8 @@ const Inventory = () => {
                       <td className="px-6 py-4">{item.quantity}</td>
                       <td className="px-6 py-4">{item.unit}</td>
                       <td className="px-6 py-4">{item.threshold}</td>
+                      <td className="px-6 py-4">LKR {(item.price || 0).toFixed(2)}</td>
+                      <td className="px-6 py-4">LKR {((item.price || 0) * (item.quantity || 0)).toFixed(2)}</td>
                       <td className="px-6 py-4">{new Date(item.lastUpdated).toLocaleDateString()}</td>
                       <td className="px-6 py-4">{getStatusBadge(item.quantity, item.threshold)}</td>
                       <td className="px-6 py-4 flex gap-2">
@@ -473,6 +505,9 @@ const Inventory = () => {
                   ))}
                 </tbody>
               </table>
+              <div className="mt-4 text-right text-xl font-semibold text-gray-900">
+                Total Inventory Value: LKR {totalPrice.toFixed(2)}
+              </div>
             </div>
           )}
         </div>

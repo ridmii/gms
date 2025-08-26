@@ -14,10 +14,12 @@
   },
   "dependencies": {
     "@stripe/stripe-js": "^7.6.1",
+    "@tailwindcss/vite": "^4.1.12",
     "axios": "^1.10.0",
     "file-saver": "^2.0.5",
     "firebase": "^11.9.0",
     "framer-motion": "^12.23.6",
+    "lucide-react": "^0.541.0",
     "pdfkit": "^0.17.1",
     "prop-types": "^15.8.1",
     "react": "^19.1.0",

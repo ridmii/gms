@@ -15,8 +15,9 @@ import Employee from './models/Employee.js';
 import Salary from './models/Salary.js';
 import Inventory from './models/Inventory.js';
 import fastCsv from 'fast-csv';
-import employeeRoutes from './routes/employeeRoutes.js'; // Import employee routes
+import employeeRoutes from './routes/employeeRoutes.js';
 import deliveryRoutes from './routes/deliveryRoutes.js';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
 
@@ -106,38 +107,161 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 app.use('/uploads', express.static('uploads'));
 
-// Employee Routes (integrated via employeeRoutes.js)
+// Employee Routes
 app.use('/api', employeeRoutes);
 
 // Delivery Routes
-
 app.use('/api/deliveries', deliveryRoutes);
 
+app.delete('/api/deliveries/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await Delivery.findByIdAndDelete(id);
+    if (!result) {
+      return res.status(404).send('Delivery not found');
+    }
+    res.status(200).send('Delivery deleted successfully');
+  } catch (error) {
+    res.status(500).send('Server error');
+  }
+});
+
+app.post('/api/deliveries', async (req, res) => {
+  const { deliveryId, orderId, customerName, customerEmail, address, driver, assignedTo, scheduledDate, status, notes } = req.body;
+  console.log('Received Delivery Data:', req.body); // Debug log
+  try {
+    if (!deliveryId || !orderId || !customerName || !address || !driver?.employeeNumber || !driver?.name || !scheduledDate || !status) {
+      return res.status(400).json({ error: 'Missing required fields: orderId, customerName, address, driver.employeeNumber, driver.name' });
+    }
+    const newDelivery = new Delivery({
+      deliveryId,
+      orderId,
+      customerName,
+      customerEmail,
+      address,
+      driver: {
+        employeeNumber: driver.employeeNumber,
+        name: driver.name,
+      },
+      assignedTo: assignedTo || '',
+      scheduledDate,
+      status,
+      notes: notes || '',
+    });
+    const savedDelivery = await newDelivery.save();
+    res.status(201).json(savedDelivery);
+  } catch (error) {
+    console.error('Delivery Creation Error:', error);
+    res.status(500).json({ error: 'Failed to create delivery', details: error.message });
+  }
+});
+
+app.post('/api/send-tracking-email', authenticateAdmin, async (req, res) => {
+  const { deliveryId, customerEmail, trackingDetails } = req.body;
+  console.log('Sending tracking email with data:', { deliveryId, customerEmail, trackingDetails });
+
+  try {
+    if (!deliveryId || !customerEmail || !trackingDetails) {
+      return res.status(400).json({ error: 'Missing required fields: deliveryId, customerEmail, trackingDetails' });
+    }
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER || 'admin@dimalsha.com',
+      to: customerEmail,
+      subject: `Delivery Tracking Update for Order ${deliveryId}`,
+      text: `Dear Customer,\n\nYour delivery with ID ${deliveryId} has been updated. Tracking details: ${trackingDetails}\n\nBest regards,\nDimalsha Fashions`,
+      html: `<p>Dear Customer,</p><p>Your delivery with ID <strong>${deliveryId}</strong> has been updated. Tracking details: <br><br>${trackingDetails.replace(/\n/g, '<br>')}</p><p>Best regards,<br>Dimalsha Fashions</p>`,
+    };
+
+    await transporter.sendMail(mailOptions);
+    res.status(200).json({ message: 'Tracking email sent successfully' });
+  } catch (error) {
+    console.error('Error sending tracking email:', error);
+    res.status(500).json({ error: 'Failed to send tracking email', details: error.message });
+  }
+});
+
+// Nodemailer Configuration
+let transporter;
+try {
+  let service = 'gmail'; // Default
+  let config = {};
+  if (process.env.EMAIL_USER?.includes('outlook.com') || process.env.EMAIL_USER?.includes('hotmail.com')) {
+    service = 'outlook';
+    config = {
+      host: 'smtp-mail.outlook.com',
+      port: 587,
+      secure: false,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      },
+      tls: {
+        ciphers: 'SSLv3'
+      }
+    };
+  } else {
+    config = {
+      service: service,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    };
+  }
+  
+  console.log(`Using email service: ${service}`);
+  transporter = nodemailer.createTransport(config);
+  
+  transporter.verify((error, success) => {
+    if (error) {
+      console.error('❌ Email configuration error:', error.message);
+      console.log('💡 Try enabling "Less secure app access" at https://myaccount.google.com/lesssecureapps');
+    } else {
+      console.log('✅ Email server is ready');
+    }
+  });
+} catch (error) {
+  console.error('Failed to create email transporter:', error);
+}
+
+// Make transporter available to deliveryRoutes
+deliveryRoutes.transporter = transporter;
 
 // Auto-create deliveries from pending orders on server start
-const initializeDeliveries = async () => {
+async function initializeDeliveries() {
   try {
-    const pendingOrders = await Order.find({ status: 'Pending' });
-    for (const order of pendingOrders) {
-      const existingDelivery = await Delivery.findOne({ orderId: order._id });
+    const deliveries = await Delivery.find();
+    const orders = await Order.find({ status: 'Pending' })
+      .sort({ date: -1 })
+      .limit(12)
+      .exec();
+
+    for (const order of orders) {
+      const existingDelivery = deliveries.find((d) => d.orderId === order._id.toString());
       if (!existingDelivery) {
-        const delivery = new Delivery({
-          deliveryId: `DEL-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-          orderId: order._id,
-          customer: order.name || 'Unknown Customer',
-          address: order.address || 'Not provided',
-          assignedTo: '',
+        const newDelivery = new Delivery({
+          deliveryId: `DEL-${order._id.toString().slice(-8)}`, // Convert to string and slice
+          orderId: order._id.toString(), // Store as string
+          customerName: order.name,
+          customerEmail: order.email,
+          address: order.address || 'Not specified',
+          driver: {
+            employeeNumber: 'EMP001', // Default value
+            name: 'Default Driver',   // Default value
+          },
+          assignedTo: 'Default Driver', // Sync with driver name
+          scheduledDate: new Date(),
           status: 'Pending',
         });
-        await delivery.save();
-        console.log(`Created delivery for order ${order._id}`);
+        await newDelivery.save();
+        console.log(`Created delivery for order ${order._id.toString()}`);
       }
     }
-    updateDashboardStats(); // Trigger SSE update after initialization
-  } catch (err) {
-    console.error('Error initializing deliveries:', err);
+  } catch (error) {
+    console.error('Error initializing deliveries:', error);
   }
-};
+}
 
 // Order Routes
 app.post('/api/orders', (req, res, next) => {
@@ -378,7 +502,7 @@ app.put('/api/salaries/:id/mark-paid', authenticateAdmin, async (req, res) => {
 // Inventory Routes
 app.get('/api/inventory', authenticateAdmin, async (req, res) => {
   try {
-    const inventory = await Inventory.find().sort({ lastAdded: -1 });
+    const inventory = await Inventory.find().sort({ lastUpdated: -1 });
     res.json(inventory);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching inventory' });
@@ -386,10 +510,10 @@ app.get('/api/inventory', authenticateAdmin, async (req, res) => {
 });
 
 app.post('/api/inventory', authenticateAdmin, async (req, res) => {
-  const { id, item, type, quantity, unit, threshold } = req.body;
+  const { id, item, type, quantity, unit, threshold, price } = req.body;
   try {
-    if (!id || !item || !quantity || !unit || !threshold) {
-      return res.status(400).json({ message: 'ID, item, quantity, unit, and threshold are required' });
+    if (!id || !item || !quantity || !unit || !threshold || !price) {
+      return res.status(400).json({ message: 'ID, item, quantity, unit, threshold, and price are required' });
     }
     const inventory = new Inventory({
       id: id || `INV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000)}`,
@@ -398,7 +522,8 @@ app.post('/api/inventory', authenticateAdmin, async (req, res) => {
       quantity: Number(quantity),
       unit,
       threshold: Number(threshold),
-      lastAdded: new Date(),
+      price: Number(price),
+      lastUpdated: new Date(),
     });
     const savedInventory = await inventory.save();
     res.status(201).json(savedInventory);
@@ -410,11 +535,11 @@ app.post('/api/inventory', authenticateAdmin, async (req, res) => {
 
 app.put('/api/inventory/:id', authenticateAdmin, async (req, res) => {
   const { id } = req.params;
-  const { item, type, quantity, unit, threshold } = req.body;
+  const { item, type, quantity, unit, threshold, price } = req.body;
   try {
     const inventory = await Inventory.findOneAndUpdate(
       { id },
-      { item, type, quantity: Number(quantity), unit, threshold: Number(threshold), lastAdded: new Date() },
+      { item, type, quantity: Number(quantity), unit, threshold: Number(threshold), price: Number(price), lastUpdated: new Date() },
       { new: true, runValidators: true }
     );
     if (!inventory) return res.status(404).json({ message: 'Inventory item not found' });
@@ -433,7 +558,7 @@ app.put('/api/inventory/:id/add', authenticateAdmin, async (req, res) => {
     }
     const inventory = await Inventory.findOneAndUpdate(
       { id },
-      { $inc: { quantity: Number(addQty) }, lastAdded: new Date() },
+      { $inc: { quantity: Number(addQty) }, lastUpdated: new Date() },
       { new: true, runValidators: true }
     );
     if (!inventory) return res.status(404).json({ message: 'Inventory item not found' });
@@ -457,7 +582,7 @@ app.put('/api/inventory/:id/remove', authenticateAdmin, async (req, res) => {
     }
     const updatedInventory = await Inventory.findOneAndUpdate(
       { id },
-      { $inc: { quantity: -Number(removeQty) }, lastAdded: new Date() },
+      { $inc: { quantity: -Number(removeQty) }, lastUpdated: new Date() },
       { new: true, runValidators: true }
     );
     res.json(updatedInventory);
@@ -474,6 +599,23 @@ app.delete('/api/inventory/:id', authenticateAdmin, async (req, res) => {
     res.json({ message: 'Inventory item deleted' });
   } catch (error) {
     res.status(500).json({ message: 'Error deleting inventory item' });
+  }
+});
+
+app.get('/api/inventory/total-value', authenticateAdmin, async (req, res) => {
+  try {
+    const inventory = await Inventory.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalValue: { $sum: { $multiply: ['$quantity', '$price'] } }
+        }
+      }
+    ]);
+    const totalValue = inventory.length > 0 ? inventory[0].totalValue : 0;
+    res.json({ totalInventoryValue: totalValue });
+  } catch (error) {
+    res.status(500).json({ message: 'Error calculating total inventory value', error: error.message });
   }
 });
 
@@ -679,11 +821,9 @@ app.get('/api/dashboard/stats', authenticateAdmin, async (req, res) => {
     endDate.setMonth(endDate.getMonth() + 1);
     console.log('Date range:', { startDate, endDate });
 
-    // Check for existing orders
     const hasOrders = await Order.countDocuments() > 0;
     console.log('Orders exist:', hasOrders);
 
-    // Calculate monthly income from orders
     const incomeResult = await Order.aggregate([
       { $match: { date: { $gte: startDate, $lt: endDate } } },
       {
@@ -696,7 +836,6 @@ app.get('/api/dashboard/stats', authenticateAdmin, async (req, res) => {
     console.log('Income aggregation result:', incomeResult);
     const monthlyIncome = incomeResult[0]?.totalIncome || 0;
 
-    // Calculate total paid salaries for the month
     const salaryResult = await Salary.aggregate([
       { $match: { paid: true, paymentDate: { $gte: startDate, $lt: endDate } } },
       {
@@ -709,17 +848,14 @@ app.get('/api/dashboard/stats', authenticateAdmin, async (req, res) => {
     console.log('Salary aggregation result:', salaryResult);
     const totalSalaryExpense = salaryResult[0]?.totalExpense || 0;
 
-    // Calculate profit
     const profit = monthlyIncome - totalSalaryExpense;
 
-    // Calculate pending deliveries
     const pendingDeliveries = await Delivery.countDocuments({
       status: 'Pending',
       createdAt: { $gte: startDate, $lt: endDate },
     });
     console.log('Pending deliveries count:', pendingDeliveries);
 
-    // Calculate total orders
     const totalOrders = await Order.countDocuments({
       date: { $gte: startDate, $lt: endDate },
     });
@@ -749,7 +885,7 @@ app.get('/api/dashboard/stats', authenticateAdmin, async (req, res) => {
 });
 
 app.get('/api/test', (req, res) => {
-  res.json({ message: 'API is working!' });
+  res.json({ message: 'API is working!', email: transporter ? 'Configured' : 'Not configured' });
 });
 
 // Function to update dashboard stats and send SSE
@@ -796,7 +932,7 @@ const connectMongoDB = async () => {
   while (retries) {
     try {
       console.log('Attempting to connect to MongoDB...');
-      await mongoose.connect(process.env.MONGO_URI, {
+      await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/garment-management', {
         serverSelectionTimeoutMS: 5000,
       });
       console.log('✅ Success! Connected to MongoDB');
@@ -824,4 +960,5 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`📧 Email configured for: ${process.env.EMAIL_USER || 'Not set'}`);
 });

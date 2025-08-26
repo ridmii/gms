@@ -14,17 +14,21 @@ const SalaryFinanceManagement = () => {
   const [token] = useState(localStorage.getItem('adminToken') || '');
   const [monthlyIncome, setMonthlyIncome] = useState(0);
   const [monthlySalaryExpense, setMonthlySalaryExpense] = useState(0);
+  const [inventoryExpense, setInventoryExpense] = useState(0); // New state for inventory expense
   const [monthlyProfit, setMonthlyProfit] = useState(0);
 
   // Fetch initial data
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [salariesRes, statsRes] = await Promise.all([
+        const [salariesRes, statsRes, inventoryRes] = await Promise.all([
           axios.get('http://localhost:5000/api/salaries', {
             headers: { Authorization: `Bearer ${token}` },
           }),
           axios.get(`http://localhost:5000/api/dashboard/stats?month=${selectedMonth}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          axios.get('http://localhost:5000/api/inventory/total-value', {
             headers: { Authorization: `Bearer ${token}` },
           }),
         ]);
@@ -32,12 +36,15 @@ const SalaryFinanceManagement = () => {
         const stats = statsRes.data || { monthlyIncome: 0, totalSalaryExpense: 0, profit: 0 };
         setMonthlyIncome(stats.monthlyIncome);
         setMonthlySalaryExpense(stats.totalSalaryExpense);
-        setMonthlyProfit(stats.profit);
+        setInventoryExpense(inventoryRes.data.totalInventoryValue || 0);
+        // Recalculate profit: Income - (Salary Expense + Inventory Expense)
+        setMonthlyProfit(stats.monthlyIncome - (stats.totalSalaryExpense + (inventoryRes.data.totalInventoryValue || 0)));
       } catch (err) {
         console.error('Error fetching data:', err.response?.data || err.message);
         setMonthlyIncome(100000); // Fallback for demo
         setMonthlySalaryExpense(40000);
-        setMonthlyProfit(60000);
+        setInventoryExpense(30000); // Fallback inventory expense
+        setMonthlyProfit(30000); // Fallback profit
       }
     };
     if (token) fetchData();
@@ -47,7 +54,6 @@ const SalaryFinanceManagement = () => {
   useEffect(() => {
     if (!token) return;
 
-    // Workaround to include Authorization header with EventSource
     const es = new EventSourcePolyfill('http://localhost:5000/api/dashboard/stream', {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -56,7 +62,13 @@ const SalaryFinanceManagement = () => {
       const data = JSON.parse(event.data);
       setMonthlyIncome(data.monthlyIncome);
       setMonthlySalaryExpense(data.totalSalaryExpense);
-      setMonthlyProfit(data.profit);
+      // Fetch inventory expense separately as SSE might not include it
+      axios.get('http://localhost:5000/api/inventory/total-value', {
+        headers: { Authorization: `Bearer ${token}` },
+      }).then((res) => {
+        setInventoryExpense(res.data.totalInventoryValue || 0);
+        setMonthlyProfit(data.monthlyIncome - (data.totalSalaryExpense + (res.data.totalInventoryValue || 0)));
+      }).catch((err) => console.error('Error fetching inventory value:', err));
     };
     es.onerror = (err) => {
       console.error('SSE error:', err);
@@ -113,22 +125,22 @@ const SalaryFinanceManagement = () => {
   };
 
   const handleDelete = async (_id) => {
-  try {
-    const salary = salaries.find(sal => sal._id === _id);
-    if (!salary) {
-      console.error('Salary not found for _id:', _id);
-      return;
+    try {
+      const salary = salaries.find(sal => sal._id === _id);
+      if (!salary) {
+        console.error('Salary not found for _id:', _id);
+        return;
+      }
+      console.log(`Deleting salary with _id: ${_id}, custom id: ${salary.id}`);
+      const response = await axios.delete(`http://localhost:5000/api/salaries/${_id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      console.log('Delete response:', response.data);
+      setSalaries((prev) => prev.filter((sal) => sal._id !== _id));
+    } catch (err) {
+      console.error('Error deleting salary:', err.response?.data || err.message);
     }
-    console.log(`Deleting salary with _id: ${_id}, custom id: ${salary.id}`);
-    const response = await axios.delete(`http://localhost:5000/api/salaries/${_id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    console.log('Delete response:', response.data);
-    setSalaries((prev) => prev.filter((sal) => sal._id !== _id));
-  } catch (err) {
-    console.error('Error deleting salary:', err.response?.data || err.message);
-  }
-};
+  };
 
   const handleSubmit = async () => {
     try {
@@ -197,7 +209,8 @@ const SalaryFinanceManagement = () => {
     const totalPaidAmount = paidEmployees.reduce((sum, sal) => sum + (Number(sal.Amount.replace('LKR ', '') || 0)), 0);
     const totalUnpaidAmount = unpaidEmployees.reduce((sum, sal) => sum + (Number(sal.Amount.replace('LKR ', '') || 0)), 0);
     const totalSalaryExpense = monthlySalaryExpense; // Use backend-calculated value
-    const profit = monthlyProfit; // Use backend-calculated value
+    const totalExpenses = totalSalaryExpense + inventoryExpense; // Add inventory expense
+    const profit = monthlyProfit; // Already adjusted with inventory expense
 
     const reportData = [
       ...paidEmployees,
@@ -205,8 +218,10 @@ const SalaryFinanceManagement = () => {
       ...unpaidEmployees,
       { 'Employee ID': 'Total Unpaid Amount', 'Name': '', 'Role': '', 'Amount': `LKR ${totalUnpaidAmount}`, 'Payment Date': '', 'Status': '' },
       { 'Employee ID': 'Total Salary Expense', 'Name': '', 'Role': '', 'Amount': `LKR ${totalSalaryExpense}`, 'Payment Date': '', 'Status': '' },
-      { 'Employee ID': 'Monthly Income', 'Name': '', 'Role': '', 'Amount': `LKR ${monthlyIncome}`, 'Payment Date': '', 'Status': '' },
-      { 'Employee ID': 'Profit', 'Name': '', 'Role': '', 'Amount': `LKR ${profit}`, 'Payment Date': '', 'Status': '' },
+      { 'Employee ID': 'Total Inventory Expense', 'Name': '', 'Role': '', 'Amount': `LKR ${inventoryExpense.toLocaleString()}`, 'Payment Date': '', 'Status': '' },
+      { 'Employee ID': 'Total Expenses', 'Name': '', 'Role': '', 'Amount': `LKR ${totalExpenses.toLocaleString()}`, 'Payment Date': '', 'Status': '' },
+      { 'Employee ID': 'Monthly Income', 'Name': '', 'Role': '', 'Amount': `LKR ${monthlyIncome.toLocaleString()}`, 'Payment Date': '', 'Status': '' },
+      { 'Employee ID': 'Profit', 'Name': '', 'Role': '', 'Amount': `LKR ${profit.toLocaleString()}`, 'Payment Date': '', 'Status': '' },
     ];
 
     const wb = XLSX.utils.book_new();
@@ -315,7 +330,7 @@ const SalaryFinanceManagement = () => {
         </div>
         <div className="mt-6 bg-white p-6 rounded-lg shadow">
           <h2 className="text-xl font-semibold text-gray-800 mb-4">Monthly Financial Summary</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-gray-50 p-4 rounded-lg">
               <p className="text-sm text-gray-600">Monthly Income</p>
               <p className="text-2xl font-bold text-gray-800">LKR {monthlyIncome.toLocaleString()}</p>
@@ -323,6 +338,10 @@ const SalaryFinanceManagement = () => {
             <div className="bg-gray-50 p-4 rounded-lg">
               <p className="text-sm text-gray-600">Total Salary Expense</p>
               <p className="text-2xl font-bold text-gray-800">LKR {monthlySalaryExpense.toLocaleString()}</p>
+            </div>
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <p className="text-sm text-gray-600">Total Inventory Expense</p>
+              <p className="text-2xl font-bold text-gray-800">LKR {inventoryExpense.toLocaleString()}</p>
             </div>
             <div className="bg-gray-50 p-4 rounded-lg">
               <p className="text-sm text-gray-600">Profit</p>

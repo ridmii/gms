@@ -1,11 +1,339 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 import AdminSidebar from './AdminSidebar';
-import { FiLogOut } from 'react-icons/fi';
+import { FiSearch, FiLogOut, FiPlus } from 'react-icons/fi';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
+// Tracking Modal Component
+const TrackingModal = ({ delivery, onClose }) => {
+  const [customerEmail, setCustomerEmail] = useState(delivery?.customerEmail || '');
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'Pending':
+        return '#d69e2e';
+      case 'In Progress':
+        return '#f6ad55';
+      case 'Delivered':
+        return '#38a169';
+      case 'Cancelled':
+        return '#e53e3e';
+      default:
+        return '#718096';
+    }
+  };
+
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case 'Pending':
+        return '⏳';
+      case 'In Progress':
+        return '🚛';
+      case 'Delivered':
+        return '✅';
+      case 'Cancelled':
+        return '❌';
+      default:
+        return '📦';
+    }
+  };
+
+  const handleSendEmail = async (deliveryId, customerEmail, trackingDetails) => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      const response = await fetch(`${API_BASE_URL}/send-tracking-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ deliveryId, customerEmail, trackingDetails: 'Tracking details here' }), // Placeholder tracking details
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to send email: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      setEmailSent(true);
+      setTimeout(() => setEmailSent(false), 3000);
+    } catch (error) {
+      console.error('Email sending error:', error);
+      // Handle error display (e.g., via parent component state)
+    }
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: '0',
+      left: '0',
+      right: '0',
+      bottom: '0',
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+    }}>
+      <div style={{
+        backgroundColor: 'white',
+        borderRadius: '12px',
+        padding: '32px',
+        maxWidth: '500px',
+        width: '90%',
+        maxHeight: '80vh',
+        overflowY: 'auto',
+        boxShadow: '0 10px 25px rgba(0, 0, 0, 0.25)',
+        position: 'relative',
+      }}>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center', 
+          marginBottom: '24px',
+          borderBottom: '1px solid #e2e8f0',
+          paddingBottom: '16px',
+        }}>
+          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1a202c', margin: '0' }}>
+            📍 Order Tracking
+          </h2>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none',
+              border: 'none',
+              fontSize: '24px',
+              cursor: 'pointer',
+              color: '#718096',
+              padding: '0',
+              width: '32px',
+              height: '32px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '50%',
+              transition: 'background-color 0.2s',
+            }}
+            onMouseOver={(e) => e.target.style.backgroundColor = '#f7fafc'}
+            onMouseOut={(e) => e.target.style.backgroundColor = 'transparent'}
+          >
+            ×
+          </button>
+        </div>
+
+        <div style={{
+          backgroundColor: '#f7fafc',
+          padding: '24px',
+          borderRadius: '12px',
+          marginBottom: '24px',
+          border: '1px solid #e2e8f0',
+        }}>
+          <h3 style={{ 
+            fontSize: '18px', 
+            fontWeight: '600', 
+            marginBottom: '16px', 
+            color: '#2d3748',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}>
+            📦 Order Details
+          </h3>
+          
+          <div style={{ display: 'grid', gap: '12px', fontSize: '14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontWeight: '600', color: '#4a5568' }}>Order ID:</span>
+              <span style={{ color: '#2d3748' }}>{delivery.orderId}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontWeight: '600', color: '#4a5568' }}>Delivery ID:</span>
+              <span style={{ color: '#2d3748' }}>{delivery.deliveryId}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontWeight: '600', color: '#4a5568' }}>Customer Name:</span> {/* Changed to customerName */}
+              <span style={{ color: '#2d3748' }}>{delivery.customerName || 'N/A'}</span> {/* Changed to customerName */}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontWeight: '600', color: '#4a5568' }}>Current Status:</span>
+              <span style={{ 
+                color: getStatusColor(delivery.status),
+                fontWeight: '600',
+                backgroundColor: getStatusColor(delivery.status) + '20',
+                padding: '4px 12px',
+                borderRadius: '20px',
+                fontSize: '13px',
+              }}>
+                {getStatusIcon(delivery.status)} {delivery.status}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontWeight: '600', color: '#4a5568' }}>Assigned To:</span>
+              <span style={{ color: '#2d3748' }}>{delivery.assignedTo}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontWeight: '600', color: '#4a5568' }}>Scheduled Date:</span>
+              <span style={{ color: '#2d3748' }}>{new Date(delivery.scheduledDate).toLocaleDateString()}</span>
+            </div>
+            <div style={{ marginTop: '8px', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
+              <span style={{ fontWeight: '600', color: '#4a5568', display: 'block', marginBottom: '4px' }}>Delivery Address:</span>
+              <span style={{ color: '#2d3748' }}>{delivery.address}</span>
+            </div>
+          </div>
+        </div>
+
+        <div style={{
+          backgroundColor: '#e6fffa',
+          padding: '20px',
+          borderRadius: '12px',
+          border: '1px solid #81e6d9',
+          marginBottom: '20px',
+        }}>
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '8px',
+            marginBottom: '16px', 
+          }}>
+            <span style={{ fontSize: '18px' }}>📧</span>
+            <h4 style={{ 
+              fontSize: '16px', 
+              fontWeight: '600', 
+              color: '#234e52',
+              margin: '0',
+            }}>
+              Send Order Details to Customer
+            </h4>
+          </div>
+          
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ 
+              display: 'block', 
+              fontSize: '14px', 
+              fontWeight: '500', 
+              color: '#234e52',
+              marginBottom: '8px', 
+            }}>
+              Customer Email Address:
+            </label>
+            <input
+              type="email"
+              value={customerEmail}
+              onChange={(e) => setCustomerEmail(e.target.value)}
+              placeholder="Enter customer email"
+              style={{
+                width: '100%',
+                padding: '12px',
+                border: '1px solid #b2f5ea',
+                borderRadius: '8px',
+                fontSize: '14px',
+                backgroundColor: 'white',
+                boxSizing: 'border-box',
+                transition: 'border-color 0.2s',
+              }}
+              onFocus={(e) => e.target.style.borderColor = '#319795'}
+              onBlur={(e) => e.target.style.borderColor = '#b2f5ea'}
+            />
+          </div>
+
+          {emailSent && (
+            <div style={{
+              backgroundColor: '#c6f6d5',
+              border: '1px solid #9ae6b4',
+              color: '#2f855a',
+              padding: '12px',
+              borderRadius: '8px',
+              marginBottom: '16px',
+              fontWeight: '500',
+              fontSize: '14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}>
+              <span>✅</span>
+              Email sent successfully to customer!
+            </div>
+          )}
+
+          <button
+            onClick={() => handleSendEmail(delivery.deliveryId, customerEmail, 'Tracking details here')}
+            disabled={sendingEmail || !customerEmail}
+            style={{
+              backgroundColor: sendingEmail || !customerEmail ? '#a0aec0' : '#319795',
+              color: 'white',
+              padding: '12px 24px',
+              borderRadius: '8px',
+              border: 'none',
+              cursor: sendingEmail || !customerEmail ? 'not-allowed' : 'pointer',
+              fontSize: '14px',
+              fontWeight: '500',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'background-color 0.2s',
+            }}
+            onMouseOver={(e) => {
+              if (!sendingEmail && customerEmail) {
+                e.target.style.backgroundColor = '#2c7a7b';
+              }
+            }}
+            onMouseOut={(e) => {
+              if (!sendingEmail && customerEmail) {
+                e.target.style.backgroundColor = '#319795';
+              }
+            }}
+          >
+            {sendingEmail ? (
+              <>
+                <div style={{
+                  width: '16px',
+                  height: '16px',
+                  border: '2px solid transparent',
+                  borderTop: '2px solid white',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite',
+                }}></div>
+                Sending...
+              </>
+            ) : (
+              <>
+                <span>📧</span>
+                Send Email to Customer
+              </>
+            )}
+          </button>
+        </div>
+
+        <div style={{ textAlign: 'center' }}>
+          <button
+            onClick={onClose}
+            style={{
+              backgroundColor: '#718096',
+              color: 'white',
+              padding: '12px 32px',
+              borderRadius: '8px',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '500',
+              transition: 'background-color 0.2s',
+            }}
+            onMouseOver={(e) => e.target.style.backgroundColor = '#4a5568'}
+            onMouseOut={(e) => e.target.style.backgroundColor = '#718096'}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Main Delivery Management Component
 const DeliveryManagement = () => {
   const [deliveries, setDeliveries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -14,42 +342,50 @@ const DeliveryManagement = () => {
   const [showForm, setShowForm] = useState(false);
   const [showReports, setShowReports] = useState(false);
   const [editingDelivery, setEditingDelivery] = useState(null);
+  const [trackingDelivery, setTrackingDelivery] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [timeFilter, setTimeFilter] = useState('all');
   const navigate = useNavigate();
 
   const [formData, setFormData] = useState({
     deliveryId: '',
     orderId: '',
-    customerName: '',
+    customerName: '', // Changed from customer to customerName
+    customerEmail: '',
     address: '',
     assignedTo: '',
-    employeeNumber: '',
-    orderDate: '',
+    scheduledDate: '',
     status: 'Pending',
   });
-
-  // Fetch admin name from token (assuming JWT decoding or simple storage)
-  const adminToken = localStorage.getItem('adminToken');
-  const adminName = adminToken ? JSON.parse(atob(adminToken.split('.')[1])).name || 'Admin' : 'Admin'; // Decode JWT or fallback
-  const adminEmail = adminToken ? JSON.parse(atob(adminToken.split('.')[1])).email || 'admin@dimalsha.com' : 'admin@dimalsha.com'; // Fallback email
 
   const fetchDeliveries = async () => {
     try {
       setLoading(true);
       const token = localStorage.getItem('adminToken');
+      if (!token) {
+        navigate('/admin/login');
+        return;
+      }
       const response = await fetch(`${API_BASE_URL}/deliveries`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!response.ok) throw new Error('Failed to fetch');
+      if (!response.ok) throw new Error(`Deliveries fetch failed: ${await response.text()}`);
       const data = await response.json();
       setDeliveries(data);
     } catch (err) {
-      setError('Failed to fetch deliveries');
+      setError(`Failed to fetch deliveries: ${err.message}`);
       console.error('Error:', err);
+      if (err.response?.status === 401) {
+        localStorage.removeItem('adminToken');
+        navigate('/admin/login');
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  // Initialize deliveries from recent orders on first load
   useEffect(() => {
     const token = localStorage.getItem('adminToken');
     if (!token) {
@@ -57,60 +393,101 @@ const DeliveryManagement = () => {
       return;
     }
 
-    const fetchData = async () => {
+    const initializeDeliveries = async () => {
       setLoading(true);
       try {
-        const token = localStorage.getItem('adminToken');
         const [deliveriesResponse, ordersResponse] = await Promise.all([
-          axios.get(`${API_BASE_URL}/deliveries`, {
+          fetch(`${API_BASE_URL}/deliveries`, {
             headers: { Authorization: `Bearer ${token}` },
           }),
-          axios.get(`${API_BASE_URL}/orders/admin`, {
+          fetch(`${API_BASE_URL}/orders/admin`, {
             headers: { Authorization: `Bearer ${token}` },
           }),
         ]);
-        setDeliveries(deliveriesResponse.data || []);
 
-        const pendingOrders = ordersResponse.data.filter((order) => order.status === 'Pending');
-        for (const order of pendingOrders) {
-          const existingDelivery = deliveriesResponse.data.find((d) => d.orderId === order._id);
+        if (!deliveriesResponse.ok) throw new Error(`Deliveries fetch failed: ${await deliveriesResponse.text()}`);
+        if (!ordersResponse.ok) throw new Error(`Orders fetch failed: ${await ordersResponse.text()}`);
+
+        const deliveriesData = await deliveriesResponse.json();
+        const ordersData = await ordersResponse.json();
+
+        // Limit to 12 most recent orders, sorted by date
+        const recentOrders = ordersData
+          .sort((a, b) => new Date(b.date) - new Date(a.date))
+          .slice(0, 12)
+          .filter((order) => order.status === 'Pending');
+
+        setDeliveries(deliveriesData);
+
+        // Create deliveries for pending orders not already in deliveries
+        for (const order of recentOrders) {
+          const existingDelivery = deliveriesData.find((d) => d.orderId === order._id.toString());
           if (!existingDelivery) {
-            await axios.post(
-              `${API_BASE_URL}/deliveries`,
-              {
-                orderId: order._id,
-                customerName: order.name,
-                address: order.address,
-                driver: {
-                  name: '',
-                  employeeNumber: '',
-                },
-                orderDate: new Date().toISOString(),
-                status: 'Pending',
+            const deliveryData = {
+              deliveryId: `DEL-${order._id.toString().slice(-8)}`, // Ensure _id is string
+              orderId: order._id.toString(),
+              customerName: order.name,
+              customerEmail: order.email,
+              address: order.address || 'Not specified',
+              driver: {
+                employeeNumber: 'EMP001',
+                name: 'Default Driver',
               },
-              { headers: { Authorization: `Bearer ${token}` } }
-            );
+              assignedTo: 'Default Driver',
+              scheduledDate: new Date().toISOString(),
+              status: 'Pending',
+            };
+            const response = await fetch(`${API_BASE_URL}/deliveries`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify(deliveryData),
+            });
+            if (!response.ok) {
+              console.error(`Failed to create delivery for order ${order._id}:`, await response.text());
+            }
           }
         }
-        const updatedDeliveries = await axios.get(`${API_BASE_URL}/deliveries`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setDeliveries(updatedDeliveries.data || []);
+
+        fetchDeliveries(); // Refresh after potential creations
         setError(null);
       } catch (err) {
-        setError('Failed to fetch deliveries or orders.');
-        if (err.response?.status === 401) {
-          localStorage.removeItem('adminToken');
-          navigate('/admin/login');
-        }
-        console.error('API Error:', err.response?.data || err.message);
+        setError(`Failed to initialize: ${err.message}`);
+        console.error('Initialization Error:', err);
       } finally {
-        setLoading(false);
-      }
-    };
+      setLoading(false);
+    }
+  };
 
-    fetchData();
+    initializeDeliveries();
   }, [navigate]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery.trim().toLowerCase()), 250);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    let filtered = deliveries || [];
+    if (debouncedQuery) {
+      filtered = filtered.filter((delivery) =>
+        delivery.deliveryId.toLowerCase().includes(debouncedQuery) ||
+        delivery.orderId.toLowerCase().includes(debouncedQuery) ||
+        (delivery.customerName || '').toLowerCase().includes(debouncedQuery) || // Changed to customerName
+        (delivery.customerEmail || '').toLowerCase().includes(debouncedQuery)
+      );
+    }
+    if (timeFilter !== 'all') {
+      const now = new Date();
+      const cutoff = new Date();
+      if (timeFilter === '7days') cutoff.setDate(now.getDate() - 7);
+      else if (timeFilter === '30days') cutoff.setDate(now.getDate() - 30);
+      filtered = filtered.filter((delivery) => new Date(delivery.scheduledDate) >= cutoff);
+    }
+    setDeliveries(filtered);
+  }, [debouncedQuery, timeFilter, deliveries]);
 
   const handleInputChange = (e) => {
     setFormData({
@@ -122,25 +499,17 @@ const DeliveryManagement = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const token = localStorage.getItem('adminToken');
       const method = editingDelivery ? 'PUT' : 'POST';
       const url = editingDelivery
         ? `${API_BASE_URL}/deliveries/${editingDelivery._id}`
         : `${API_BASE_URL}/deliveries`;
 
+      const token = localStorage.getItem('adminToken');
       const payload = {
-        customerName: formData.customerName,
-        address: formData.address,
-        status: formData.status,
-        orderDate: formData.orderDate || new Date().toISOString(),
-        driver: {
-          name: formData.assignedTo || '',
-          employeeNumber: formData.employeeNumber || '',
-        },
-        deliveryId: formData.deliveryId,
-        orderId: formData.orderId,
+        ...formData,
+        scheduledDate: formData.scheduledDate ? new Date(formData.scheduledDate).toISOString() : new Date().toISOString(),
       };
-
+      console.log('Submitting Delivery Data:', payload);
       const response = await fetch(url, {
         method,
         headers: {
@@ -150,21 +519,21 @@ const DeliveryManagement = () => {
         body: JSON.stringify(payload),
       });
 
-      if (!response.ok) throw new Error('Failed to save');
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Server Response:', errorText);
+        throw new Error(`Failed to save: ${response.status} - ${errorText}`);
+      }
 
       fetchDeliveries();
       resetForm();
       setShowForm(false);
 
-      setSuccess(
-        editingDelivery
-          ? 'Delivery updated successfully!'
-          : 'Delivery added successfully!'
-      );
+      setSuccess(editingDelivery ? 'Delivery updated successfully!' : 'Delivery added successfully!');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
-      setError('Failed to save delivery');
-      console.error('Error:', err);
+      setError(`Failed to save delivery: ${err.message}`);
+      console.error('Save Error:', err);
     }
   };
 
@@ -172,11 +541,11 @@ const DeliveryManagement = () => {
     setFormData({
       deliveryId: '',
       orderId: '',
-      customerName: '',
+      customerName: '', // Changed from customer to customerName
+      customerEmail: '',
       address: '',
       assignedTo: '',
-      employeeNumber: '',
-      orderDate: '',
+      scheduledDate: '',
       status: 'Pending',
     });
     setEditingDelivery(null);
@@ -184,14 +553,16 @@ const DeliveryManagement = () => {
 
   const handleEdit = (delivery) => {
     setFormData({
-      deliveryId: delivery.deliveryId || '',
-      orderId: delivery.orderId || '',
-      customerName: delivery.customerName || '',
-      address: delivery.address || '',
-      assignedTo: delivery.driver?.name || '',
-      employeeNumber: delivery.driver?.employeeNumber || '',
-      orderDate: delivery.orderDate ? new Date(delivery.orderDate).toISOString().split('T')[0] : '',
-      status: delivery.status || 'Pending',
+      deliveryId: delivery.deliveryId,
+      orderId: delivery.orderId,
+      customerName: delivery.customerName || '', // Changed to customerName
+      customerEmail: delivery.customerEmail || '',
+      address: delivery.address,
+      assignedTo: delivery.assignedTo,
+      scheduledDate: delivery.scheduledDate
+        ? new Date(delivery.scheduledDate).toISOString().split('T')[0]
+        : '',
+      status: delivery.status,
     });
     setEditingDelivery(delivery);
     setShowForm(true);
@@ -202,17 +573,23 @@ const DeliveryManagement = () => {
     if (window.confirm('Are you sure you want to delete this delivery?')) {
       try {
         const token = localStorage.getItem('adminToken');
-        const response = await fetch(`${API_BASE_URL}/deliveries/${id}`, {
+        const url = `${API_BASE_URL}/deliveries/${id}`;
+        console.log('DELETE Request URL:', url, 'Token:', token);
+        const response = await fetch(url, {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (!response.ok) throw new Error('Failed to delete');
+        console.log('Response Status:', response.status, 'Response OK:', response.ok);
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Failed to delete: ${response.status} - ${errorText}`);
+        }
         fetchDeliveries();
         setSuccess('Delivery deleted successfully!');
         setTimeout(() => setSuccess(null), 3000);
       } catch (err) {
-        setError('Failed to delete delivery');
-        console.error('Error:', err);
+        console.error('Delete Error:', err);
+        setError(`Failed to delete delivery: ${err.message}`);
       }
     }
   };
@@ -220,8 +597,8 @@ const DeliveryManagement = () => {
   const handleStatusChange = async (id, newStatus) => {
     try {
       const token = localStorage.getItem('adminToken');
-      const response = await fetch(`${API_BASE_URL}/deliveries/${id}`, {
-        method: 'PUT',
+      const response = await fetch(`${API_BASE_URL}/deliveries/${id}/status`, {
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
@@ -238,6 +615,10 @@ const DeliveryManagement = () => {
     }
   };
 
+  const handleTrackOrder = (delivery) => {
+    setTrackingDelivery(delivery);
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('adminToken');
     navigate('/admin/login');
@@ -245,321 +626,271 @@ const DeliveryManagement = () => {
 
   if (loading) {
     return (
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          height: '100vh',
-        }}
-      >
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div
-            style={{
-              width: '32px',
-              height: '32px',
-              border: '3px solid #e2e8f0',
-              borderTop: '3px solid #3182ce',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite',
-            }}
-          ></div>
-          <span style={{ fontSize: '16px', color: '#4a5568' }}>
-            Loading deliveries...
-          </span>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            border: '3px solid #e2e8f0',
+            borderTop: '3px solid #3182ce',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+          }}></div>
+          <span style={{ fontSize: '16px', color: '#4a5568' }}>Loading deliveries...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex bg-gray-100 font-inter">
-      {/* Sidebar */}
+    <div className="min-h-screen flex bg-gray-50 font-inter">
       <AdminSidebar activePage="deliveries" />
 
-      {/* Main Content with Header */}
-      <main className="ml-64 w-full p-6">
-        <div className="flex justify-between items-center mb-6">
+      <main className="ml-64 w-full p-6 transition-all duration-300 ease-in-out">
+        <div className="flex justify-between items-start md:items-center mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">Delivery Management</h1>
-            <p className="text-sm text-gray-500">Manage delivery details</p>
+            <h1 className="text-3xl font-bold text-gray-900">Deliveries</h1>
+            <p className="text-sm text-gray-500">Manage and track all deliveries</p>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-sm font-medium text-gray-800">Admin User</p>
-              <p className="text-xs text-gray-500">{adminEmail}</p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                setShowForm(!showForm);
+                setShowReports(false);
+              }}
+              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-700"
+            >
+              <FiPlus /> {showForm ? 'Close Form' : 'Assign Delivery'}
+            </button>
+            <div className="hidden md:block h-8 w-px bg-gray-200" />
+            <div className="hidden md:flex items-center gap-3">
+              <div className="text-right">
+                <p className="text-sm font-medium text-gray-800">Admin User</p>
+                <p className="text-xs text-gray-500">admin@dimalsha.com</p>
+              </div>
+              <div className="w-9 h-9 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">
+                AU
+              </div>
+              <button
+                onClick={handleLogout}
+                className="rounded-lg border border-gray-200 bg-white p-2 text-gray-500 hover:text-red-600 hover:border-red-200"
+                title="Log out"
+              >
+                <FiLogOut size={18} />
+              </button>
             </div>
-            <div className="w-9 h-9 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">
-              {adminName.charAt(0).toUpperCase()}
-              {adminName.split(' ')[1]?.charAt(0).toUpperCase() || ''}
-            </div>
-            <FiLogOut
-              className="text-gray-500 hover:text-red-500 cursor-pointer"
-              size={18}
-              onClick={handleLogout}
-            />
           </div>
         </div>
 
-        {/* Main Content */}
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          {/* Success Message */}
-          {success && (
-            <div className="bg-green-100 border border-green-400 text-green-700 p-3 rounded-lg mb-4 flex items-center gap-2">
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
-              {success}
-            </div>
-          )}
-
-          {/* Error Message */}
-          {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 p-3 rounded-lg mb-4 flex items-center gap-2">
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              {error}
-            </div>
-          )}
-
-          {/* Reports Section */}
-          {showReports && (
-            <ReportGenerating
-              deliveries={deliveries}
-              onClose={() => setShowReports(false)}
-            />
-          )}
-
-          {/* Add/Edit Form */}
-          {showForm && (
-            <div className="bg-gray-50 p-6 rounded-lg mb-6 border border-gray-200">
-              <h3 className="text-lg font-semibold mb-4 text-gray-800">
-                {editingDelivery ? 'Edit Delivery' : 'Add New Delivery'}
-              </h3>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <input
-                    type="text"
-                    name="deliveryId"
-                    placeholder="Delivery ID"
-                    value={formData.deliveryId}
-                    onChange={handleInputChange}
-                    className="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                  <input
-                    type="text"
-                    name="orderId"
-                    placeholder="Order ID"
-                    value={formData.orderId}
-                    onChange={handleInputChange}
-                    className="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                  <input
-                    type="text"
-                    name="customerName"
-                    placeholder="Customer Name"
-                    value={formData.customerName}
-                    onChange={handleInputChange}
-                    className="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                  <input
-                    type="text"
-                    name="address"
-                    placeholder="Delivery Address"
-                    value={formData.address}
-                    onChange={handleInputChange}
-                    className="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                  <input
-                    type="text"
-                    name="assignedTo"
-                    placeholder="Driver Name"
-                    value={formData.assignedTo}
-                    onChange={handleInputChange}
-                    className="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                  <input
-                    type="text"
-                    name="employeeNumber"
-                    placeholder="Driver Employee Number"
-                    value={formData.employeeNumber}
-                    onChange={handleInputChange}
-                    className="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                  <input
-                    type="date"
-                    name="orderDate"
-                    value={formData.orderDate}
-                    onChange={handleInputChange}
-                    className="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                  <select
-                    name="status"
-                    value={formData.status}
-                    onChange={handleInputChange}
-                    className="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="Pending">Pending</option>
-                    <option value="In Progress">In Progress</option>
-                    <option value="Delivered">Delivered</option>
-                    <option value="Cancelled">Cancelled</option>
-                  </select>
-                </div>
-                <div className="flex gap-4">
-                  <button
-                    type="submit"
-                    className="bg-indigo-600 text-white px-3 py-1 rounded flex items-center gap-1 hover:bg-indigo-700 transition"
-                  >
-                    {editingDelivery ? 'Update' : 'Add'} Delivery
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowForm(false);
-                      resetForm();
-                    }}
-                    className="bg-gray-500 hover:bg-gray-600 text-white px-3 py-1 rounded"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
-
-          {/* Table */}
-          <div className="overflow-x-auto bg-white rounded-lg shadow">
-            <table className="min-w-full text-sm text-left">
-              <thead className="bg-gray-100 text-gray-600">
-                <tr>
-                  <th className="px-4 py-3">Delivery ID</th>
-                  <th className="px-4 py-3">Order ID</th>
-                  <th className="px-4 py-3">Customer</th>
-                  <th className="px-4 py-3">Address</th>
-                  <th className="px-4 py-3">Assigned To</th>
-                  <th className="px-4 py-3">Employee Number</th>
-                  <th className="px-4 py-3">Order Date</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {deliveries.map((delivery) => (
-                  <tr key={delivery._id}>
-                    <td className="px-4 py-2 font-medium">{delivery.deliveryId}</td>
-                    <td className="px-4 py-2">{delivery.orderId}</td>
-                    <td className="px-4 py-2">{delivery.customerName}</td>
-                    <td className="px-4 py-2">{delivery.address}</td>
-                    <td className="px-4 py-2">{delivery.driver?.name}</td>
-                    <td className="px-4 py-2">{delivery.driver?.employeeNumber}</td>
-                    <td className="px-4 py-2">{new Date(delivery.orderDate).toLocaleDateString()}</td>
-                    <td className="px-4 py-2">
-                      <select
-                        value={delivery.status}
-                        onChange={(e) => handleStatusChange(delivery._id, e.target.value)}
-                        className={`p-2 border rounded ${
-                          delivery.status === 'Pending'
-                            ? 'bg-red-100 text-red-700'
-                            : delivery.status === 'In Progress'
-                            ? 'bg-yellow-100 text-yellow-700'
-                            : delivery.status === 'Delivered'
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-red-100 text-red-700'
-                        }`}
-                      >
-                        <option value="Pending">Pending</option>
-                        <option value="In Progress">In Progress</option>
-                        <option value="Delivered">Delivered</option>
-                        <option value="Cancelled">Cancelled</option>
-                      </select>
-                    </td>
-                    <td className="px-4 py-2 flex gap-2">
-                      <button
-                        onClick={() => handleEdit(delivery)}
-                        className="text-blue-600 hover:text-blue-800"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(delivery._id)}
-                        className="text-red-600 hover:text-red-800"
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {deliveries.length === 0 && !loading && (
-                  <tr>
-                    <td className="px-4 py-4 text-gray-400" colSpan="9">
-                      No deliveries found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+        {success && (
+          <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+            {success}
           </div>
+        )}
+        {error && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {error}
+          </div>
+        )}
 
-          {/* Quick Stats Footer */}
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mt-6 p-4 bg-gray-50 rounded-lg">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-gray-800">{deliveries.length}</div>
-              <div className="text-xs text-gray-500 uppercase">Total Deliveries</div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 mb-6">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="relative w-full md:w-1/2">
+              <input
+                type="text"
+                placeholder="Search by delivery ID, order ID, customer name, or email..."
+                className="pl-10 pr-4 py-2 w-full rounded-xl border border-gray-200 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
             </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-yellow-500">
-                {deliveries.filter((d) => d.status === 'Pending').length}
-              </div>
-              <div className="text-xs text-gray-500 uppercase">Pending</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-orange-500">
-                {deliveries.filter((d) => d.status === 'In Progress').length}
-              </div>
-              <div className="text-xs text-gray-500 uppercase">In Progress</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-500">
-                {deliveries.filter((d) => d.status === 'Delivered').length}
-              </div>
-              <div className="text-xs text-gray-500 uppercase">Delivered</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-red-500">
-                {deliveries.filter((d) => d.status === 'Cancelled').length}
-              </div>
-              <div className="text-xs text-gray-500 uppercase">Cancelled</div>
+            <div className="flex items-center gap-3">
+              <select
+                value={timeFilter}
+                onChange={(e) => setTimeFilter(e.target.value)}
+                className="rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="all">All Time</option>
+                <option value="7days">Last 7 Days</option>
+                <option value="30days">Last 30 Days</option>
+              </select>
             </div>
           </div>
         </div>
+
+        {showReports && (
+          <div className="mb-6 rounded-2xl border border-gray-200 bg-white p-6">
+            <h3 className="text-xl font-semibold text-gray-800 mb-4">Reports Section</h3>
+            <p className="text-gray-500">Reports functionality will be implemented here.</p>
+          </div>
+        )}
+
+        {showForm && (
+          <div className="mb-6 rounded-2xl border border-gray-200 bg-white p-6">
+            <h3 className="text-xl font-semibold text-gray-800 mb-4">
+              {editingDelivery ? 'Edit Delivery' : 'Add New Delivery'}
+            </h3>
+            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <input 
+                type="text" 
+                name="deliveryId" 
+                placeholder="Delivery ID" 
+                value={formData.deliveryId} 
+                onChange={handleInputChange} 
+                className="p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                required 
+              />
+              <input 
+                type="text" 
+                name="orderId" 
+                placeholder="Order ID" 
+                value={formData.orderId} 
+                onChange={handleInputChange} 
+                className="p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                required 
+              />
+              <input 
+                type="text" 
+                name="customerName" 
+                placeholder="Customer Name" 
+                value={formData.customerName} 
+                onChange={handleInputChange} 
+                className="p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                required 
+              />
+              <input 
+                type="email" 
+                name="customerEmail" 
+                placeholder="Customer Email" 
+                value={formData.customerEmail} 
+                onChange={handleInputChange} 
+                className="p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <input 
+                type="text" 
+                name="address" 
+                placeholder="Delivery Address" 
+                value={formData.address} 
+                onChange={handleInputChange} 
+                className="p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                required 
+              />
+              <input 
+                type="text" 
+                name="assignedTo" 
+                placeholder="Assigned To" 
+                value={formData.assignedTo} 
+                onChange={handleInputChange} 
+                className="p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                required 
+              />
+              <input 
+                type="date" 
+                name="scheduledDate" 
+                value={formData.scheduledDate} 
+                onChange={handleInputChange} 
+                className="p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                required 
+              />
+              <select 
+                name="status" 
+                value={formData.status} 
+                onChange={handleInputChange} 
+                className="p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="Pending">Pending</option>
+                <option value="In Progress">In Progress</option>
+                <option value="Delivered">Delivered</option>
+                <option value="Cancelled">Cancelled</option>
+              </select>
+              <div className="md:col-span-2 flex justify-end gap-4">
+                <button 
+                  type="submit" 
+                  className="bg-green-600 text-white px-4 py-2 rounded-xl hover:bg-green-700"
+                >
+                  {editingDelivery ? 'Update' : 'Add'} Delivery
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => { setShowForm(false); resetForm(); }} 
+                  className="bg-gray-500 text-white px-4 py-2 rounded-xl hover:bg-gray-600"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+  <div className="overflow-x-auto">
+    <table className="min-w-full text-sm">
+      <thead className="bg-gray-100/70 backdrop-blur text-gray-600">
+        <tr><th className="px-4 py-3 text-left font-semibold">Delivery ID</th><th className="px-4 py-3 text-left font-semibold">Order ID</th><th className="px-4 py-3 text-left font-semibold">Customer Name</th><th className="px-4 py-3 text-left font-semibold">Email</th><th className="px-4 py-3 text-left font-semibold">Address</th><th className="px-4 py-3 text-left font-semibold">Assigned To</th><th className="px-4 py-3 text-left font-semibold">Scheduled Date</th><th className="px-4 py-3 text-left font-semibold">Status</th><th className="px-4 py-3 text-left font-semibold">Actions</th></tr>
+      </thead>
+      <tbody className="divide-y divide-gray-100">
+        {loading && (
+          [...Array(6)].map((_, i) => (
+            <tr key={`skeleton-${i}`} className="animate-pulse">
+              <td className="px-4 py-3"><div className="h-4 w-24 bg-gray-200 rounded" /></td><td className="px-4 py-3"><div className="h-4 w-24 bg-gray-200 rounded" /></td><td className="px-4 py-3"><div className="h-4 w-32 bg-gray-200 rounded" /></td><td className="px-4 py-3"><div className="h-4 w-40 bg-gray-200 rounded" /></td><td className="px-4 py-3"><div className="h-4 w-32 bg-gray-200 rounded" /></td><td className="px-4 py-3"><div className="h-4 w-24 bg-gray-200 rounded" /></td><td className="px-4 py-3"><div className="h-4 w-24 bg-gray-200 rounded" /></td><td className="px-4 py-3"><div className="h-4 w-20 bg-gray-200 rounded" /></td><td className="px-4 py-3"><div className="h-4 w-24 bg-gray-200 rounded" /></td>
+            </tr>
+          ))
+        )}
+        {!loading && deliveries.length === 0 && (
+          <tr>
+            <td colSpan="9" className="px-4 py-10 text-center text-gray-500">
+              No deliveries found. Try adjusting your search or date filter.
+            </td>
+          </tr>
+        )}
+        {!loading &&
+          deliveries.map((delivery) => (
+            <tr key={delivery._id} className="hover:bg-gray-50">
+              <td className="px-4 py-3 font-medium text-gray-900">{delivery.deliveryId}</td><td className="px-4 py-3 text-gray-700">{delivery.orderId}</td><td className="px-4 py-3 text-gray-700">{delivery.customerName || 'N/A'}</td><td className="px-4 py-3 text-gray-700">{delivery.customerEmail || 'Not provided'}</td><td className="px-4 py-3 text-gray-700">{delivery.address}</td><td className="px-4 py-3 text-gray-700">{delivery.assignedTo}</td><td className="px-4 py-3 text-gray-700">{new Date(delivery.scheduledDate).toLocaleDateString()}</td><td className="px-4 py-3">
+                <select value={delivery.status} onChange={(e) => handleStatusChange(delivery._id, e.target.value)} className="p-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="Pending">Pending</option><option value="In Progress">In Progress</option><option value="Delivered">Delivered</option><option value="Cancelled">Cancelled</option>
+                </select>
+              </td><td className="px-4 py-3">
+                <div className="flex gap-2">
+                  <button onClick={() => handleTrackOrder(delivery)} className="text-blue-600 hover:bg-blue-50 p-1 rounded-lg" title="Track Order">📍 Track</button><button onClick={() => handleEdit(delivery)} className="text-blue-600 hover:bg-blue-50 p-1 rounded-lg">Edit</button><button onClick={() => handleDelete(delivery._id)} className="text-red-600 hover:bg-red-50 p-1 rounded-lg">Delete</button>
+                </div>
+              </td>
+            </tr>
+          ))}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-5 gap-4 mt-6">
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 text-center">
+            <div className="text-2xl font-semibold text-gray-900">{deliveries.length}</div>
+            <div className="text-xs text-gray-500 uppercase">Total Deliveries</div>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 text-center">
+            <div className="text-2xl font-semibold text-yellow-600">{deliveries.filter(d => d.status === 'Pending').length}</div>
+            <div className="text-xs text-gray-500 uppercase">Pending</div>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 text-center">
+            <div className="text-2xl font-semibold text-orange-600">{deliveries.filter(d => d.status === 'In Progress').length}</div>
+            <div className="text-xs text-gray-500 uppercase">In Progress</div>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 text-center">
+            <div className="text-2xl font-semibold text-green-600">{deliveries.filter(d => d.status === 'Delivered').length}</div>
+            <div className="text-xs text-gray-500 uppercase">Delivered</div>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 text-center">
+            <div className="text-2xl font-semibold text-red-600">{deliveries.filter(d => d.status === 'Cancelled').length}</div>
+            <div className="text-xs text-gray-500 uppercase">Cancelled</div>
+          </div>
+        </div>
+
+        {trackingDelivery && (
+          <TrackingModal 
+            delivery={trackingDelivery} 
+            onClose={() => setTrackingDelivery(null)} 
+          />
+        )}
       </main>
 
       <style>{`
@@ -571,13 +902,5 @@ const DeliveryManagement = () => {
     </div>
   );
 };
-
-const ReportGenerating = ({ deliveries, onClose }) => (
-  <div>
-    <h3>Delivery Report</h3>
-    {/* Add report generation logic here */}
-    <button onClick={onClose}>Close</button>
-  </div>
-);
 
 export default DeliveryManagement;
