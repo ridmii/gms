@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { FiSearch, FiPlus, FiLogOut, FiEdit, FiTrash2, FiX } from 'react-icons/fi';
+import { FiSearch, FiPlus, FiLogOut, FiEdit, FiTrash2, FiX, FiDownload } from 'react-icons/fi';
 import AdminSidebar from './AdminSidebar';
 import axios from 'axios';
+import * as XLSX from 'xlsx'; // Import xlsx library
 
 const Inventory = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -205,6 +206,75 @@ const Inventory = () => {
   // Calculate total price with fallback for undefined price
   const totalPrice = inventoryItems.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 0), 0);
 
+  // Function to generate and download Excel file
+  const downloadInventoryReport = () => {
+    const workbook = XLSX.utils.book_new();
+    const currentDate = new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Colombo' }); // Adjusted for +0530
+
+    // Low Inventory Worksheet
+    const lowInventory = inventoryItems.filter(item => item.quantity <= item.threshold);
+    const lowInventoryData = [
+      ['ID', 'Item', 'Type', 'Quantity', 'Unit', 'Threshold', 'Price per Unit (LKR)', 'Total Price (LKR)'],
+      ...lowInventory.map(item => [
+        item.id,
+        item.item,
+        item.type,
+        item.quantity,
+        item.unit,
+        item.threshold,
+        (item.price || 0).toFixed(2),
+        ((item.price || 0) * (item.quantity || 0)).toFixed(2),
+      ]),
+    ];
+    const lowWs = XLSX.utils.aoa_to_sheet(lowInventoryData);
+    XLSX.utils.book_append_sheet(workbook, lowWs, 'Low Inventory');
+
+    // High Inventory Worksheet
+    const highInventory = inventoryItems.filter(item => item.quantity > item.threshold);
+    const highInventoryData = [
+      ['ID', 'Item', 'Type', 'Quantity', 'Unit', 'Threshold', 'Price per Unit (LKR)', 'Total Price (LKR)'],
+      ...highInventory.map(item => [
+        item.id,
+        item.item,
+        item.type,
+        item.quantity,
+        item.unit,
+        item.threshold,
+        (item.price || 0).toFixed(2),
+        ((item.price || 0) * (item.quantity || 0)).toFixed(2),
+      ]),
+    ];
+    const highWs = XLSX.utils.aoa_to_sheet(highInventoryData);
+    XLSX.utils.book_append_sheet(workbook, highWs, 'High Inventory');
+
+    // Inventory Expenses Worksheet
+    const expensesData = [
+      ['ID', 'Item', 'Type', 'Quantity', 'Unit', 'Price per Unit (LKR)', 'Total Price (LKR)'],
+      ...inventoryItems.map(item => [
+        item.id,
+        item.item,
+        item.type,
+        item.quantity,
+        item.unit,
+        (item.price || 0).toFixed(2),
+        ((item.price || 0) * (item.quantity || 0)).toFixed(2),
+      ]),
+      ['Total Inventory Expenses', '', '', '', '', '', totalPrice.toFixed(2)], // Use the same totalPrice as on the page
+    ];
+    const expensesWs = XLSX.utils.aoa_to_sheet(expensesData);
+    XLSX.utils.book_append_sheet(workbook, expensesWs, 'Inventory Expenses');
+
+    // Generate and trigger download
+    const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/octet-stream' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Inventory_Report_${currentDate}.xlsx`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="min-h-screen flex bg-gray-50 font-poppins text-gray-800">
       <AdminSidebar activePage="inventory" />
@@ -231,6 +301,7 @@ const Inventory = () => {
           <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6">
             <div className="relative w-full md:w-1/3">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+
               </span>
               <input
                 type="text"
@@ -253,6 +324,12 @@ const Inventory = () => {
                 className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-2 rounded-lg transition-all duration-200"
               >
                 Stock Taking
+              </button>
+              <button
+                onClick={downloadInventoryReport}
+                className="flex items-center gap-2 bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-all duration-200 shadow-md hover:shadow-lg"
+              >
+                <FiDownload /> Download Report
               </button>
             </div>
           </div>
