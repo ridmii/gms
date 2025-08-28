@@ -1,25 +1,23 @@
-// Delivery.js
 import mongoose from 'mongoose';
 
 const deliverySchema = new mongoose.Schema({
   deliveryId: { type: String, required: true, unique: true },
   orderId: { type: String, required: true },
   customerName: { type: String, required: true },
-  customerEmail: { type: String }, // Added for email notifications
+  customerEmail: { type: String },
   address: { type: String, required: true },
   driver: {
-    employeeNumber: { type: String, required: true }, // Required
-    name: { type: String, required: true },          // Required
+    employeeNumber: { type: String }, // Made optional
+    name: { type: String, required: true },
   },
-  assignedTo: { type: String }, // Added to match assigned driver
-  scheduledDate: { type: Date }, // Added for scheduling
-  deliveryTime: { type: String }, // Added for time details
-  status: { 
-    type: String, 
-    enum: ['Pending', 'In Progress', 'Delivered', 'Cancelled'], 
-    default: 'Pending' 
+  assignedTo: { type: String },
+  scheduledDate: { type: Date },
+  status: {
+    type: String,
+    enum: ['Pending', 'In Progress', 'Delivered', 'Cancelled'],
+    default: 'Pending',
   },
-  notes: { type: String }, // Added for additional notes
+  notes: { type: String },
 }, { timestamps: true });
 
 // Auto-update updatedAt

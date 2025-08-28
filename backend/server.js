@@ -110,158 +110,115 @@ app.use('/uploads', express.static('uploads'));
 // Employee Routes
 app.use('/api', employeeRoutes);
 
+
 // Delivery Routes
 app.use('/api/deliveries', deliveryRoutes);
 
-app.delete('/api/deliveries/:id', async (req, res) => {
-  const { id } = req.params;
-  try {
-    const result = await Delivery.findByIdAndDelete(id);
-    if (!result) {
-      return res.status(404).send('Delivery not found');
-    }
-    res.status(200).send('Delivery deleted successfully');
-  } catch (error) {
-    res.status(500).send('Server error');
-  }
-});
+// Global MongoDB Connection
+let mongooseConnection = null;
 
-app.post('/api/deliveries', async (req, res) => {
-  const { deliveryId, orderId, customerName, customerEmail, address, driver, assignedTo, scheduledDate, status, notes } = req.body;
-  console.log('Received Delivery Data:', req.body); // Debug log
+const connectDB = async () => {
+  if (mongooseConnection) return; // Prevent multiple connections
+
   try {
-    if (!deliveryId || !orderId || !customerName || !address || !driver?.employeeNumber || !driver?.name || !scheduledDate || !status) {
-      return res.status(400).json({ error: 'Missing required fields: orderId, customerName, address, driver.employeeNumber, driver.name' });
-    }
-    const newDelivery = new Delivery({
-      deliveryId,
-      orderId,
-      customerName,
-      customerEmail,
-      address,
-      driver: {
-        employeeNumber: driver.employeeNumber,
-        name: driver.name,
-      },
-      assignedTo: assignedTo || '',
-      scheduledDate,
-      status,
-      notes: notes || '',
+    mongooseConnection = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/garment-order-db', {
+      // Removed deprecated options
     });
-    const savedDelivery = await newDelivery.save();
-    res.status(201).json(savedDelivery);
+    console.log('✅ Success! Connected to MongoDB');
+    await initializeDeliveries();
   } catch (error) {
-    console.error('Delivery Creation Error:', error);
-    res.status(500).json({ error: 'Failed to create delivery', details: error.message });
-  }
-});
-
-app.post('/api/send-tracking-email', authenticateAdmin, async (req, res) => {
-  const { deliveryId, customerEmail, trackingDetails } = req.body;
-  console.log('Sending tracking email with data:', { deliveryId, customerEmail, trackingDetails });
-
-  try {
-    if (!deliveryId || !customerEmail || !trackingDetails) {
-      return res.status(400).json({ error: 'Missing required fields: deliveryId, customerEmail, trackingDetails' });
+    console.error('❌ Connection attempt failed:', error.message);
+    if (error.name === 'MongoNetworkError') {
+      console.log('💡 Ensure MongoDB is running on localhost:27017. Start with `mongod`.');
     }
-
-    const mailOptions = {
-      from: process.env.EMAIL_USER || 'admin@dimalsha.com',
-      to: customerEmail,
-      subject: `Delivery Tracking Update for Order ${deliveryId}`,
-      text: `Dear Customer,\n\nYour delivery with ID ${deliveryId} has been updated. Tracking details: ${trackingDetails}\n\nBest regards,\nDimalsha Fashions`,
-      html: `<p>Dear Customer,</p><p>Your delivery with ID <strong>${deliveryId}</strong> has been updated. Tracking details: <br><br>${trackingDetails.replace(/\n/g, '<br>')}</p><p>Best regards,<br>Dimalsha Fashions</p>`,
-    };
-
-    await transporter.sendMail(mailOptions);
-    res.status(200).json({ message: 'Tracking email sent successfully' });
-  } catch (error) {
-    console.error('Error sending tracking email:', error);
-    res.status(500).json({ error: 'Failed to send tracking email', details: error.message });
+    console.log(`Retrying in 5 seconds... (4 attempts left)`);
+    setTimeout(connectDB, 5000);
   }
-});
+};
+
+// Initialize deliveries function
+const initializeDeliveries = async () => {
+  try {
+    const count = await Delivery.countDocuments();
+    if (count === 0) {
+      console.log('📦 Initializing default deliveries...');
+      const initialDeliveries = [
+        {
+          deliveryId: `DEL-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          orderId: 'ORD-12345678',
+          customerName: 'John Doe',
+          customerEmail: 'john.doe@example.com',
+          address: '123 Main St, Colombo',
+          driver: { name: 'Default Driver', employeeNumber: 'EMP001' },
+          assignedTo: 'Default Driver',
+          scheduledDate: new Date('2025-08-28T16:04:00+0530'), // Current time
+          status: 'Pending',
+        },
+      ];
+      await Delivery.insertMany(initialDeliveries);
+      console.log('✅ Default deliveries initialized successfully');
+    }
+  } catch (error) {
+    console.error('❌ Failed to initialize deliveries:', error.message);
+  }
+};
 
 // Nodemailer Configuration
 let transporter;
-try {
-  let service = 'gmail'; // Default
-  let config = {};
-  if (process.env.EMAIL_USER?.includes('outlook.com') || process.env.EMAIL_USER?.includes('hotmail.com')) {
-    service = 'outlook';
-    config = {
-      host: 'smtp-mail.outlook.com',
-      port: 587,
-      secure: false,
+
+const initializeEmailService = async () => {
+  try {
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      throw new Error('Email credentials (EMAIL_USER and EMAIL_PASS) are required in .env file.');
+    }
+
+    console.log('📧 Initializing email service with credentials for:', process.env.EMAIL_USER);
+    const config = {
+      service: 'gmail',
       auth: {
         user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
+        pass: process.env.EMAIL_PASS,
       },
-      tls: {
-        ciphers: 'SSLv3'
-      }
     };
-  } else {
-    config = {
-      service: service,
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-      }
-    };
-  }
-  
-  console.log(`Using email service: ${service}`);
-  transporter = nodemailer.createTransport(config);
-  
-  transporter.verify((error, success) => {
-    if (error) {
-      console.error('❌ Email configuration error:', error.message);
-      console.log('💡 Try enabling "Less secure app access" at https://myaccount.google.com/lesssecureapps');
+
+    transporter = nodemailer.createTransport(config);
+    
+    await transporter.verify();
+    console.log('✅ Email service initialized successfully');
+    return transporter;
+  } catch (error) {
+    console.error('❌ Email service initialization failed:', error.message);
+    if (error.message.includes('EAUTH')) {
+      console.log('💡 For Gmail, enable 2FA and use an App Password:');
+      console.log('1. Go to https://myaccount.google.com/security');
+      console.log('2. Enable 2-factor authentication');
+      console.log('3. Generate an App Password: https://myaccount.google.com/apppasswords');
+      console.log('4. Update EMAIL_PASS in your .env file with the 16-character app password');
     } else {
-      console.log('✅ Email server is ready');
+      console.log('💡 Ensure EMAIL_USER and EMAIL_PASS are correctly set in your .env file.');
+    }
+    process.exit(1); // Exit if email setup fails
+  }
+};
+
+// Initialize services
+const startServer = async () => {
+  await initializeEmailService().then(emailTransporter => {
+    global.emailTransporter = emailTransporter;
+    if (deliveryRoutes && typeof deliveryRoutes.setTransporter === 'function') {
+      deliveryRoutes.setTransporter(emailTransporter);
     }
   });
-} catch (error) {
-  console.error('Failed to create email transporter:', error);
-}
 
-// Make transporter available to deliveryRoutes
-deliveryRoutes.transporter = transporter;
+  await connectDB();
 
-// Auto-create deliveries from pending orders on server start
-async function initializeDeliveries() {
-  try {
-    const deliveries = await Delivery.find();
-    const orders = await Order.find({ status: 'Pending' })
-      .sort({ date: -1 })
-      .limit(12)
-      .exec();
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
+  });
+};
 
-    for (const order of orders) {
-      const existingDelivery = deliveries.find((d) => d.orderId === order._id.toString());
-      if (!existingDelivery) {
-        const newDelivery = new Delivery({
-          deliveryId: `DEL-${order._id.toString().slice(-8)}`, // Convert to string and slice
-          orderId: order._id.toString(), // Store as string
-          customerName: order.name,
-          customerEmail: order.email,
-          address: order.address || 'Not specified',
-          driver: {
-            employeeNumber: 'EMP001', // Default value
-            name: 'Default Driver',   // Default value
-          },
-          assignedTo: 'Default Driver', // Sync with driver name
-          scheduledDate: new Date(),
-          status: 'Pending',
-        });
-        await newDelivery.save();
-        console.log(`Created delivery for order ${order._id.toString()}`);
-      }
-    }
-  } catch (error) {
-    console.error('Error initializing deliveries:', error);
-  }
-}
+startServer();
 
 // Order Routes
 app.post('/api/orders', (req, res, next) => {

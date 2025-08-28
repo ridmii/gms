@@ -27,23 +27,36 @@ const AdminDashboard = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [statsResponse, ordersResponse, inventoryResponse] = await Promise.all([
+        const [statsResponse, ordersResponse, deliveriesResponse, inventoryResponse] = await Promise.all([
           axios.get('http://localhost:5000/api/dashboard/stats', {
             headers: { Authorization: `Bearer ${token}` },
           }),
           axios.get('http://localhost:5000/api/orders/admin', {
             headers: { Authorization: `Bearer ${token}` },
           }),
+          axios.get('http://localhost:5000/api/deliveries', {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
           axios.get('http://localhost:5000/api/inventory', {
             headers: { Authorization: `Bearer ${token}` },
           }),
         ]);
+
+        const orders = ordersResponse.data;
+        const deliveries = deliveriesResponse.data;
+
+        // Sync order status with delivery status
+        const updatedOrders = orders.map((order) => {
+          const delivery = deliveries.find((d) => d.orderId === order._id);
+          return delivery ? { ...order, status: delivery.status === 'Delivered' ? 'Delivered' : order.status } : order;
+        });
+
         setDashboardStats({
           totalOrders: statsResponse.data.totalOrders,
-          pendingDeliveries: statsResponse.data.pendingDeliveries,
+          pendingDeliveries: deliveries.filter((d) => d.status === 'Pending').length,
           monthlyIncome: statsResponse.data.monthlyIncome,
         });
-        setRecentOrders(ordersResponse.data.slice(0, 5));
+        setRecentOrders(updatedOrders.slice(0, 5));
         setInventoryItems(inventoryResponse.data);
         setError(null);
       } catch (err) {
@@ -56,6 +69,7 @@ const AdminDashboard = () => {
         setLoading(false);
       }
     };
+
     fetchData();
     const interval = setInterval(fetchData, 5000); // Poll every 5 seconds
     return () => clearInterval(interval);

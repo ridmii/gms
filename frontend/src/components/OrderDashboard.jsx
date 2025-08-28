@@ -83,7 +83,6 @@ const OrderDashboard = () => {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = Array.isArray(ordersResponse.data) ? ordersResponse.data : [];
-        // sort newest first by date
         data.sort((a, b) => new Date(b.date) - new Date(a.date));
         setOrders(data);
         setFilteredOrders(data);
@@ -169,7 +168,6 @@ const OrderDashboard = () => {
       return;
     }
 
-    // Calculate priceDetails
     const qty = parseInt(editOrder.quantity, 10);
     const unitPrice = qty > 30 ? 1500 : 2000;
     const artworkFee = editOrder.artwork ? 5000 : 0;
@@ -271,7 +269,6 @@ const OrderDashboard = () => {
       });
       const newOrderData = response.data;
 
-      // Create a corresponding delivery entry
       const deliveryData = {
         deliveryId: `DEL-${newOrderData._id.slice(-8)}`,
         orderId: newOrderData._id,
@@ -326,6 +323,48 @@ const OrderDashboard = () => {
     };
   }, [editOrder, newOrderForm, deleteConfirm]);
 
+  // Sync order status with delivery status
+  useEffect(() => {
+    const syncOrderStatus = async () => {
+      const token = localStorage.getItem('adminToken');
+      if (!token) return;
+
+      try {
+        const deliveriesResponse = await axios.get('http://localhost:5000/api/deliveries', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const deliveries = deliveriesResponse.data;
+
+        const updatedOrders = orders.map((order) => {
+          const delivery = deliveries.find((d) => d.orderId === order._id);
+          if (delivery) {
+            const newStatus = delivery.status === 'Delivered' ? 'Delivered' : order.status;
+            if (newStatus !== order.status) {
+              axios.put(
+                `http://localhost:5000/api/orders/${order._id}`,
+                { status: newStatus },
+                { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
+              ).catch((err) => console.error('Status sync error:', err));
+            }
+            return { ...order, status: newStatus };
+          }
+          return order;
+        });
+
+        if (JSON.stringify(updatedOrders) !== JSON.stringify(orders)) {
+          setOrders(updatedOrders);
+          setFilteredOrders(updatedOrders);
+        }
+      } catch (err) {
+        console.error('Failed to sync order status:', err);
+      }
+    };
+
+    syncOrderStatus();
+    const interval = setInterval(syncOrderStatus, 5000); // Sync every 5 seconds
+    return () => clearInterval(interval);
+  }, [orders]);
+
   const handleStatusChange = (orderId, newStatus) => {
     const updatedOrders = orders.map((order) =>
       order._id === orderId ? { ...order, status: newStatus } : order
@@ -336,8 +375,8 @@ const OrderDashboard = () => {
 
   // ---------- Derived quick stats ----------
   const totalOrders = filteredOrders.length;
-  const todayStr = new Date().toDateString();
-  const todayOrders = filteredOrders.filter((o) => new Date(o.date).toDateString() === todayStr).length;
+  const today = new Date('2025-08-28T10:15:00+0530'); // Current date and time
+  const todayOrders = filteredOrders.filter((o) => new Date(o.date).toDateString() === today.toDateString()).length;
   const pendingOrders = filteredOrders.filter((o) => (o.status || 'Pending') === 'Pending').length;
 
   return (
@@ -370,7 +409,10 @@ const OrderDashboard = () => {
                   AU
                 </div>
                 <button
-                  onClick={handleLogout}
+                  onClick={() => {
+                    localStorage.removeItem('adminToken');
+                    navigate('/admin/login');
+                  }}
                   className="rounded-lg border border-gray-200 bg-white p-2 text-gray-500 hover:text-red-600 hover:border-red-200"
                   title="Log out"
                 >
@@ -380,19 +422,27 @@ const OrderDashboard = () => {
             </div>
           </div>
 
-          {/* Quick stats */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            <div className={`${cardClass} p-4`}>
-              <p className="text-xs uppercase tracking-wide text-gray-500">Total Orders</p>
-              <p className="mt-1 text-2xl font-semibold text-gray-900">{totalOrders}</p>
+          {/* Quick stats with colors */}
+          <div className="grid grid-cols-3 gap-6 mb-6">
+            {/* Total Orders */}
+            <div className="bg-blue-100 text-blue-800 p-6 rounded-2xl shadow-lg hover:shadow-xl transition">
+              <img src="/receipt.png" alt="Total Orders" className="w-12 h-12 mx-auto mb-3" />
+              <h2 className="text-lg font-semibold text-center">Total Orders</h2>
+              <p className="text-3xl font-bold text-center">{totalOrders}</p>
             </div>
-            <div className={`${cardClass} p-4`}>
-              <p className="text-xs uppercase tracking-wide text-gray-500">Today</p>
-              <p className="mt-1 text-2xl font-semibold text-gray-900">{todayOrders}</p>
+
+            {/* Today */}
+            <div className="bg-green-100 text-green-800 p-6 rounded-2xl shadow-lg hover:shadow-xl transition">
+              <img src="/calendar.png" alt="Today Orders" className="w-12 h-12 mx-auto mb-3" />
+              <h2 className="text-lg font-semibold text-center">Today</h2>
+              <p className="text-3xl font-bold text-center">{todayOrders}</p>
             </div>
-            <div className={`${cardClass} p-4`}>
-              <p className="text-xs uppercase tracking-wide text-gray-500">Pending</p>
-              <p className="mt-1 text-2xl font-semibold text-gray-900">{pendingOrders}</p>
+
+            {/* Pending */}
+            <div className="bg-yellow-100 text-yellow-800 p-6 rounded-2xl shadow-lg hover:shadow-xl transition">
+              <img src="/document.png" alt="Pending Orders" className="w-12 h-12 mx-auto mb-3" />
+              <h2 className="text-lg font-semibold text-center">Pending</h2>
+              <p className="text-3xl font-bold text-center">{pendingOrders}</p>
             </div>
           </div>
 
@@ -433,7 +483,7 @@ const OrderDashboard = () => {
           )}
 
           {/* Orders Table */}
-          <div className={`${cardClass} overflow-hidden`}>
+          <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead className="sticky top-0 bg-gray-100/70 backdrop-blur text-gray-600">
@@ -449,69 +499,41 @@ const OrderDashboard = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {loading && (
-                    <>
-                      {[...Array(6)].map((_, i) => (
-                        <tr key={`skeleton-${i}`} className="animate-pulse">
-                          <td className="px-4 py-3"><div className="h-4 w-24 bg-gray-200 rounded" /></td>
-                          <td className="px-4 py-3"><div className="h-4 w-32 bg-gray-200 rounded" /></td>
-                          <td className="px-4 py-3"><div className="h-4 w-40 bg-gray-200 rounded" /></td>
-                          <td className="px-4 py-3"><div className="h-4 w-24 bg-gray-200 rounded" /></td>
-                          <td className="px-4 py-3"><div className="h-4 w-20 bg-gray-200 rounded" /></td>
-                          <td className="px-4 py-3"><div className="h-4 w-10 bg-gray-200 rounded" /></td>
-                          <td className="px-4 py-3"><div className="h-4 w-24 bg-gray-200 rounded" /></td>
-                          <td className="px-4 py-3"><div className="h-8 w-36 bg-gray-200 rounded" /></td>
-                        </tr>
-                      ))}
-                    </>
-                  )}
-
-                  {!loading && filteredOrders.length === 0 && (
-                    <tr>
-                      <td colSpan={8} className="px-4 py-10 text-center text-gray-500">
-                        No orders found. Try adjusting your search or date filter.
+                  {filteredOrders.map((order) => (
+                    <tr key={order._id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium text-gray-900">{formatOrderId(order._id)}</td>
+                      <td className="px-4 py-3 text-gray-700">{order.name || 'N/A'}</td>
+                      <td className="px-4 py-3 text-gray-700">{order.email || 'N/A'}</td>
+                      <td className="px-4 py-3 text-gray-700">{order.mobile || 'N/A'}</td>
+                      <td className="px-4 py-3 text-gray-700">{order.material || 'N/A'}</td>
+                      <td className="px-4 py-3 text-gray-700">{order.quantity || 'N/A'}</td>
+                      <td className="px-4 py-3 text-gray-700">
+                        {order.date ? new Date(order.date).toLocaleDateString() : '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => handleDownload(order._id)}
+                            className="rounded-lg bg-blue-100 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-200"
+                          >
+                            Invoice
+                          </button>
+                          <button
+                            onClick={() => handleEdit(order)}
+                            className="rounded-lg bg-green-100 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-200"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => setDeleteConfirm(order._id)}
+                            className="rounded-lg bg-red-100 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-200"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
-                  )}
-
-                  {!loading &&
-                    filteredOrders.map((order) => (
-                      <tr key={order._id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 font-medium text-gray-900">
-                          {formatOrderId(order._id)}
-                        </td>
-                        <td className="px-4 py-3 text-gray-700">{order.name || 'N/A'}</td>
-                        <td className="px-4 py-3 text-gray-700">{order.email || 'N/A'}</td>
-                        <td className="px-4 py-3 text-gray-700">{order.mobile || 'N/A'}</td>
-                        <td className="px-4 py-3 text-gray-700">{order.material || 'N/A'}</td>
-                        <td className="px-4 py-3 text-gray-700">{order.quantity || 'N/A'}</td>
-                        <td className="px-4 py-3 text-gray-700">
-                          {order.date ? new Date(order.date).toLocaleDateString() : '—'}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              onClick={() => handleDownload(order._id)}
-                              className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-blue-700 border border-blue-200 hover:bg-blue-50"
-                            >
-                              Invoice
-                            </button>
-                            <button
-                              onClick={() => handleEdit(order)}
-                              className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-green-700 border border-green-200 hover:bg-green-50"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => setDeleteConfirm(order._id)}
-                              className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-red-700 border border-red-200 hover:bg-red-50"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                  ))}
                 </tbody>
               </table>
             </div>
