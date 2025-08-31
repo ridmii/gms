@@ -55,6 +55,17 @@ router.post('/', (req, res, next) => {
   }
 });
 
+// POST to create new order
+router.post('/', async (req, res) => {
+  try {
+    const newOrder = new Order(req.body);
+    const savedOrder = await newOrder.save();
+    res.status(201).json(savedOrder);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create order', message: err.message });
+  }
+});
+
 async function createOrder(req, res) {
   try {
     // Explicitly access form fields from req.body
@@ -126,6 +137,22 @@ router.get('/', async (req, res) => {
   } catch (error) {
     console.error('Error fetching orders:', error);
     res.status(500).json({ message: error.message });
+  }
+});
+
+// Update order status
+router.put('/:id', async (req, res) => {
+  try {
+    const { status } = req.body;
+    const order = await Order.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true, runValidators: true }
+    );
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    res.json(order);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update order', message: err.message });
   }
 });
 

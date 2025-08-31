@@ -110,31 +110,8 @@ app.use('/uploads', express.static('uploads'));
 // Employee Routes
 app.use('/api', employeeRoutes);
 
-
 // Delivery Routes
 app.use('/api/deliveries', deliveryRoutes);
-
-// Global MongoDB Connection
-let mongooseConnection = null;
-
-const connectDB = async () => {
-  if (mongooseConnection) return; // Prevent multiple connections
-
-  try {
-    mongooseConnection = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/garment-order-db', {
-      // Removed deprecated options
-    });
-    console.log('✅ Success! Connected to MongoDB');
-    await initializeDeliveries();
-  } catch (error) {
-    console.error('❌ Connection attempt failed:', error.message);
-    if (error.name === 'MongoNetworkError') {
-      console.log('💡 Ensure MongoDB is running on localhost:27017. Start with `mongod`.');
-    }
-    console.log(`Retrying in 5 seconds... (4 attempts left)`);
-    setTimeout(connectDB, 5000);
-  }
-};
 
 // Initialize deliveries function
 const initializeDeliveries = async () => {
@@ -151,7 +128,7 @@ const initializeDeliveries = async () => {
           address: '123 Main St, Colombo',
           driver: { name: 'Default Driver', employeeNumber: 'EMP001' },
           assignedTo: 'Default Driver',
-          scheduledDate: new Date('2025-08-28T16:04:00+0530'), // Current time
+          scheduledDate: new Date('2025-08-28T16:04:00+0530'),
           status: 'Pending',
         },
       ];
@@ -182,7 +159,6 @@ const initializeEmailService = async () => {
     };
 
     transporter = nodemailer.createTransport(config);
-    
     await transporter.verify();
     console.log('✅ Email service initialized successfully');
     return transporter;
@@ -197,11 +173,36 @@ const initializeEmailService = async () => {
     } else {
       console.log('💡 Ensure EMAIL_USER and EMAIL_PASS are correctly set in your .env file.');
     }
-    process.exit(1); // Exit if email setup fails
+    process.exit(1);
   }
 };
 
-// Initialize services
+// Global MongoDB Connection
+const connectMongoDB = async () => {
+  let retries = 5;
+  while (retries) {
+    try {
+      console.log('Attempting to connect to MongoDB...');
+      await mongoose.connect(process.env.MONGO_URI, {
+        serverSelectionTimeoutMS: 5000,
+      });
+      console.log('✅ Success! Connected to MongoDB');
+      await initializeDeliveries();
+      return;
+    } catch (err) {
+      console.error(`❌ Connection attempt failed: ${err.message}`);
+      retries -= 1;
+      if (retries === 0) {
+        console.error('❌ Max retries reached. Exiting...');
+        process.exit(1);
+      }
+      console.log(`Retrying in 5 seconds... (${retries} attempts left)`);
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+  }
+};
+
+// Initialize services and start server
 const startServer = async () => {
   await initializeEmailService().then(emailTransporter => {
     global.emailTransporter = emailTransporter;
@@ -210,11 +211,11 @@ const startServer = async () => {
     }
   });
 
-  await connectDB();
+  await connectMongoDB();
 
-  const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
+    console.log(`📧 Email configured for: ${process.env.EMAIL_USER || 'Not set'}`);
   });
 };
 
@@ -266,6 +267,150 @@ app.post('/api/orders', (req, res, next) => {
       res.status(500).json({ error: 'Failed to save order', message: err.message });
     }
   });
+});
+
+//sending an email
+app.post('/api/orders/send-email', authenticateAdmin, async (req, res) => {
+  try {
+    const { orderId, customerEmail } = req.body;
+    if (!orderId || !customerEmail) {
+      return res.status(400).json({ error: 'Order ID and customer email are required' });
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const priceDetails = order.priceDetails || {};
+    const submissionDate = new Date(order.date || Date.now()).toLocaleDateString('en-US', {
+      day: 'numeric', month: 'long', year: 'numeric',
+    });
+
+    const mailOptions = {
+      from: '"Dimalsha Fashions" <' + process.env.EMAIL_USER + '>', 
+      to: customerEmail,
+      subject: `Order Confirmation - #${order._id.toString().slice(-8)}`,
+      html: `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              background-color: #f4f4f4;
+              margin: 0;
+              padding: 0;
+            }
+            .container {
+              width: 100%;
+              max-width: 600px;
+              margin: 0 auto;
+              background-color: #ffffff;
+              border-radius: 8px;
+              overflow: hidden;
+              box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            }
+            .header {
+              background-color: #2c3e50;
+              color: #ffffff;
+              text-align: center;
+              padding: 20px;
+            }
+            .header img {
+              max-width: 150px;
+              height: auto;
+              display: block;
+              margin: 0 auto;
+            }
+            .content {
+              padding: 20px;
+              color: #333333;
+            }
+            .content h2 {
+              color: #2c3e50;
+              font-size: 24px;
+              margin-bottom: 10px;
+            }
+            .content p {
+              font-size: 16px;
+              line-height: 1.5;
+              margin-bottom: 15px;
+            }
+            .order-details {
+              background-color: #f9f9f9;
+              padding: 15px;
+              border-radius: 5px;
+              margin-bottom: 15px;
+            }
+            .order-details ul {
+              list-style-type: none;
+              padding: 0;
+            }
+            .order-details li {
+              margin-bottom: 10px;
+            }
+            .footer {
+              background-color: #2c3e50;
+              color: #ffffff;
+              text-align: center;
+              padding: 10px;
+              font-size: 12px;
+            }
+            a {
+              color: #3498db;
+              text-decoration: none;
+            }
+            a:hover {
+              text-decoration: underline;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>Order Confirmation</h1>
+            </div>
+            <div class="content">
+              <p>Dear ${order.name},</p>
+              <p>Thank you for choosing <strong>Dimalsha Fashions</strong> for your garment production needs! We are pleased to confirm your order with the following details:</p>
+              <div class="order-details">
+                <ul>
+                  <li><strong>Order ID:</strong> #${order._id.toString().slice(-8)}</li>
+                  <li><strong>Date:</strong> ${submissionDate}</li>
+                  <li><strong>Material:</strong> ${order.material}</li>
+                  <li><strong>Quantity:</strong> ${order.quantity} units</li>
+                  <li><strong>Total Amount:</strong> LKR ${priceDetails.total?.toLocaleString() || '0'}</li>
+                  <li><strong>Advance Payment:</strong> LKR ${priceDetails.advance?.toLocaleString() || '0'} (50%)</li>
+                  <li><strong>Balance Due:</strong> LKR ${priceDetails.balance?.toLocaleString() || '0'}</li>
+                </ul>
+              </div>
+              <p>Our team is now processing your order. The estimated production timeline is <strong>2-3 weeks</strong> from order confirmation. You will receive a notification when your order is ready for delivery.</p>
+              <p>For any inquiries or to track your order, please feel free to contact us:</p>
+              <p>
+                <strong>Email:</strong> <a href="mailto:mihiripennaramani@gmail.com">mihiripennaramani@gmail.com</a><br>
+                <strong>Phone:</strong> +94 71 260 0228<br>
+                <strong>Address:</strong> 159/37, Pamunuwa Garden, Pamunuwila, Gonawela (W.P)
+              </p>
+            </div>
+            <div class="footer">
+              <p>&copy; ${new Date().getFullYear()} Dimalsha Fashions. All rights reserved.</p>
+              <p>This email was sent to ${customerEmail}. If you did not place this order, please contact us immediately.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+    };
+
+    await global.emailTransporter.sendMail(mailOptions);
+    res.json({ success: true, message: 'Email sent successfully' });
+  } catch (err) {
+    console.error('Error sending email:', err);
+    res.status(500).json({ error: 'Failed to send email', message: err.message });
+  }
 });
 
 app.put('/api/orders/:id', authenticateAdmin, (req, res, next) => {
@@ -884,38 +1029,7 @@ async function updateDashboardStats() {
   }
 }
 
-const connectMongoDB = async () => {
-  let retries = 5;
-  while (retries) {
-    try {
-      console.log('Attempting to connect to MongoDB...');
-      await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/garment-management', {
-        serverSelectionTimeoutMS: 5000,
-      });
-      console.log('✅ Success! Connected to MongoDB');
-      await initializeDeliveries(); // Initialize deliveries after connection
-      return;
-    } catch (err) {
-      console.error(`❌ Connection attempt failed: ${err.message}`);
-      retries -= 1;
-      if (retries === 0) {
-        console.error('❌ Max retries reached. Exiting...');
-        process.exit(1);
-      }
-      console.log(`Retrying in 5 seconds... (${retries} attempts left)`);
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-    }
-  }
-};
-
-connectMongoDB();
-
 app.use((err, req, res, next) => {
   console.error('Server error:', err);
   res.status(500).json({ error: 'Internal server error', message: err.message });
-});
-
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📧 Email configured for: ${process.env.EMAIL_USER || 'Not set'}`);
 });

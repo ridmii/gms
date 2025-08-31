@@ -87,6 +87,19 @@ const OrderForm = () => {
       if (!newOrderId) throw new Error('Order ID not returned from server');
       setOrderId(newOrderId);
       setSubmittedEmail(formData.email); // Save email at submission
+
+      // Send confirmation email
+      await axios.post('http://localhost:5000/api/orders/send-email', {
+        orderId: newOrderId,
+        customerEmail: formData.email
+      }, {
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImFkbWluQGRpbWFsc2hhLmNvbSIsImlhdCI6MTc1Mzg1Mjc1MSwiZXhwIjoxNzUzOTM5MTUxfQ.rluCGGNCNmVIYjj_7JLpluVa9lRAAvjIzZAEDyOoTy4'}` 
+        },
+      });
+      console.log('Email sent successfully');
+
       setShowSuccessModal(true);
       setError(null);
     } catch (err) {

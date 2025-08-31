@@ -1,5 +1,14 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import {
+  LayoutDashboard as DashboardIcon,
+  ShoppingBag as OrdersIcon,
+  Truck as DeliveryIcon,
+  Package as InventoryIcon,
+  Users as EmployeeIcon,
+  DollarSign as FinanceIcon,
+  LogOut as LogoutIcon,
+} from 'lucide-react';
 
 const AdminSidebar = ({ activePage }) => {
   const navigate = useNavigate();
@@ -10,50 +19,57 @@ const AdminSidebar = ({ activePage }) => {
   };
 
   return (
-    <aside className="w-64 bg-gray-800 text-white p-6 fixed h-full shadow-lg">
-      <div className="text-2xl font-bold mb-6">Dimalsha Fashions</div>
-      <nav className="space-y-2">
+    <aside className="w-64 bg-gray-900 text-white p-6 fixed h-full shadow-xl transition-all duration-300">
+      <div className="text-3xl font-bold mb-8 text-indigo-300">Dimalsha Fashions</div>
+      <nav className="space-y-5">
         <Link
           to="/admin/dashboard"
-          className={`block py-2 px-4 rounded ${activePage === 'dashboard' ? 'bg-blue-700 text-white' : 'hover:bg-blue-600'}`}
+          className={`flex items-center gap-3 py-3 px-4 rounded-lg ${activePage === 'dashboard' ? 'bg-blue-800 text-white' : 'hover:bg-gray-800'}`}
         >
-          Dashboard
+          <DashboardIcon size={20} />
+          <span className="text-lg">Dashboard</span>
         </Link>
         <Link
           to="/admin/orders"
-          className={`block py-2 px-4 rounded ${activePage === 'orders' ? 'bg-blue-700 text-white' : 'hover:bg-blue-600'}`}
+          className={`flex items-center gap-3 py-3 px-4 rounded-lg ${activePage === 'orders' ? 'bg-blue-800 text-white' : 'hover:bg-gray-800'}`}
         >
-          Orders
+          <OrdersIcon size={20} />
+          <span className="text-lg">Orders</span>
         </Link>
         <Link
           to="/admin/deliveries"
-          className={`block py-2 px-4 rounded ${activePage === 'deliveries' ? 'bg-blue-700 text-white' : 'hover:bg-blue-600'}`}
+          className={`flex items-center gap-3 py-3 px-4 rounded-lg ${activePage === 'deliveries' ? 'bg-blue-800 text-white' : 'hover:bg-gray-800'}`}
         >
-          Delivery
+          <DeliveryIcon size={20} />
+          <span className="text-lg">Delivery</span>
         </Link>
         <Link
           to="/admin/inventory"
-          className={`block py-2 px-4 rounded ${activePage === 'inventory' ? 'bg-blue-700 text-white' : 'hover:bg-blue-600'}`}
+          className={`flex items-center gap-3 py-3 px-4 rounded-lg ${activePage === 'inventory' ? 'bg-blue-800 text-white' : 'hover:bg-gray-800'}`}
         >
-          Inventory
+          <InventoryIcon size={20} />
+          <span className="text-lg">Inventory</span>
         </Link>
         <Link
           to="/admin/employee"
-          className={`block py-2 px-4 rounded ${activePage === 'employee' ? 'bg-blue-700 text-white' : 'hover:bg-blue-600'}`}
+          className={`flex items-center gap-3 py-3 px-4 rounded-lg ${activePage === 'employee' ? 'bg-blue-800 text-white' : 'hover:bg-gray-800'}`}
         >
-          Employee
+          <EmployeeIcon size={20} />
+          <span className="text-lg">Employee</span>
         </Link>
         <Link
           to="/admin/finance"
-          className={`block py-2 px-4 rounded ${activePage === 'finance' ? 'bg-blue-700 text-white' : 'hover:bg-blue-600'}`}
+          className={`flex items-center gap-3 py-3 px-4 rounded-lg ${activePage === 'finance' ? 'bg-blue-800 text-white' : 'hover:bg-gray-800'}`}
         >
-          Salary & Finance
+          <FinanceIcon size={20} />
+          <span className="text-lg">Salary & Finance</span>
         </Link>
         <button
           onClick={handleLogout}
-          className="w-full text-left py-2 px-4 rounded hover:bg-red-600 mt-4 text-white"
+          className="flex items-center gap-3 w-full text-left py-3 px-4 rounded-lg hover:bg-red-700 mt-8 text-white"
         >
-          Logout
+          <LogoutIcon size={20} />
+          <span className="text-lg">Logout</span>
         </button>
       </nav>
     </aside>
