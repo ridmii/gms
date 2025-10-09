@@ -42,6 +42,7 @@ const cardClass =
 // ---------- Main Component ----------
 const OrderDashboard = () => {
   const [orders, setOrders] = useState([]);
+  const [deliveries, setDeliveries] = useState([]);
   const [filteredOrders, setFilteredOrders] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -79,17 +80,24 @@ const OrderDashboard = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const ordersResponse = await axios.get('http://localhost:5000/api/orders/admin', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = Array.isArray(ordersResponse.data) ? ordersResponse.data : [];
-        data.sort((a, b) => new Date(b.date) - new Date(a.date));
-        setOrders(data);
-        setFilteredOrders(data);
+        const [ordersResponse, deliveriesResponse] = await Promise.all([
+          axios.get('http://localhost:5000/api/orders/admin', {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          axios.get('http://localhost:5000/api/deliveries', {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ]);
+        const orderData = Array.isArray(ordersResponse.data) ? ordersResponse.data : [];
+        const deliveryData = Array.isArray(deliveriesResponse.data) ? deliveriesResponse.data : [];
+        orderData.sort((a, b) => new Date(b.date) - new Date(a.date));
+        setOrders(orderData);
+        setDeliveries(deliveryData);
+        setFilteredOrders(orderData);
         setError(null);
       } catch (err) {
         console.error('Fetch error:', err);
-        setError('Failed to fetch orders. Please log in again.');
+        setError('Failed to fetch orders or deliveries. Please log in again.');
         localStorage.removeItem('adminToken');
         navigate('/admin/login');
       } finally {
@@ -219,6 +227,7 @@ const OrderDashboard = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
       setOrders((prev) => prev.filter((order) => order._id !== deleteConfirm));
+      setDeliveries((prev) => prev.filter((delivery) => delivery.orderId !== deleteConfirm));
       setFilteredOrders((prev) => prev.filter((order) => order._id !== deleteConfirm));
       setDeleteConfirm(null);
       setToastMessage('Order deleted successfully');
@@ -290,6 +299,7 @@ const OrderDashboard = () => {
       console.log('Delivery Creation Response:', deliveryResponse.data);
 
       setOrders((prev) => [newOrderData, ...prev]);
+      setDeliveries((prev) => [deliveryResponse.data, ...prev]);
       setFilteredOrders((prev) => [newOrderData, ...prev]);
       setNewOrderForm(false);
       setNewOrder({
@@ -355,6 +365,7 @@ const OrderDashboard = () => {
           setOrders(updatedOrders);
           setFilteredOrders(updatedOrders);
         }
+        setDeliveries(deliveries);
       } catch (err) {
         console.error('Failed to sync order status:', err);
       }
@@ -375,9 +386,10 @@ const OrderDashboard = () => {
 
   // ---------- Derived quick stats ----------
   const totalOrders = filteredOrders.length;
-  const today = new Date('2025-08-28T10:15:00+0530'); // Current date and time
+  const today = new Date(); // Dynamic current date
   const todayOrders = filteredOrders.filter((o) => new Date(o.date).toDateString() === today.toDateString()).length;
-  const pendingOrders = filteredOrders.filter((o) => (o.status || 'Pending') === 'Pending').length;
+  const pendingOrders = filteredOrders.filter((o) => (o.status || 'Pending') === 'Pending').length +
+    deliveries.filter((d) => d.status === 'Pending').length;
 
   return (
     <ErrorBoundary>
@@ -678,7 +690,7 @@ const OrderDashboard = () => {
               </motion.div>
             )}
 
-            {/* Delete Confirm */}
+            {/* Delete Confirm Modal */}
             {deleteConfirm && (
               <motion.div
                 className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
@@ -693,9 +705,11 @@ const OrderDashboard = () => {
                   exit={{ scale: 0.96, y: 12 }}
                   transition={{ type: 'spring', damping: 20, stiffness: 200 }}
                 >
-                  <h2 className="text-2xl font-bold text-gray-900 mb-2">Delete order?</h2>
-                  <p className="mb-6 text-gray-600">
-                    This action cannot be undone.
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">Confirm Deletion</h2>
+                  <p className="mb-4 text-gray-600">
+                    Are you sure you want to delete the order <strong>{formatOrderId(deleteConfirm)}</strong>? 
+                    This action will permanently remove the order and its associated delivery details from the system. 
+                    This cannot be undone.
                   </p>
                   <div className="flex justify-end gap-3">
                     <button

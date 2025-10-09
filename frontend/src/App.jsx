@@ -7,7 +7,6 @@ import AdminLogin from './components/AdminLogin';
 import AdminDashboard from './components/AdminDashboard';
 import OrderDashboard from './components/OrderDashboard';
 import CustomerLogin from './components/CustomerLogin';
-import CustomerRegister from './components/CustomerRegister';
 import ProtectedRoute from './components/ProtectedRoute';
 import DeliveryPage from './components/DeliveryManagement'; // Correct import
 import Inventory from './components/Inventory';
@@ -20,7 +19,6 @@ const App = () => {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<CustomerLogin />} />
-        <Route path="/register" element={<CustomerRegister />} />
         <Route path="/order" element={<OrderForm />} />
         <Route path="/past-orders" element={<PastOrders />} />
         <Route path="/admin/login" element={<AdminLogin />} />
