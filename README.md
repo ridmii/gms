@@ -222,9 +222,7 @@ This project is proprietary software for Dimalsha Fashions. All rights reserved.
 
 For questions, feedback, or support inquiries:
 
-📧 **Email**: mihiripennaramani@gmail.com  
-📞 **Phone**: +94 71 260 0228  
-📍 **Address**: 159/37, Pamunuwa Garden, Pamunuwila, Gonawela (W.P)
+📧 **Email**: heyridmi@gmail.com  
 
 Or open an issue at [GitHub repository](https://github.com/ridmii/gms/issues)
 
